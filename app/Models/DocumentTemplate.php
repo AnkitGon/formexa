@@ -23,12 +23,14 @@ class DocumentTemplate extends Model
         'font_family',
         'font_size',
         'line_height',
+        'show_logo',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'font_size' => 'integer',
         'line_height' => 'integer',
+        'show_logo' => 'boolean',
     ];
 
     public function scopeActive($query)

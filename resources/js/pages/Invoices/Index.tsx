@@ -1,10 +1,11 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import Pagination from '@/components/pagination';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link } from '@inertiajs/react';
-import { Plus, Eye, Pencil, FileText, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Plus, Eye, Pencil, FileText } from 'lucide-react';
+import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 
 interface Client {
     id: number;
@@ -24,6 +25,7 @@ interface Invoice {
 
 interface Paginator<T> {
     data: T[];
+    links?: Array<{ url: string | null; label: string; active: boolean }>;
     current_page: number;
     last_page: number;
     prev_page_url: string | null;
@@ -115,6 +117,11 @@ export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
                                                 <Button variant="outline" size="sm" asChild>
                                                     <Link href={`/invoices/${invoice.id}/edit`}>Edit</Link>
                                                 </Button>
+                                                <ConfirmDeleteButton
+                                                    action={`/invoices/${invoice.id}`}
+                                                    itemLabel={`invoice ${invoice.invoice_number}`}
+                                                    triggerText="Delete"
+                                                />
                                             </div>
                                         </td>
                                     </tr>
@@ -123,37 +130,7 @@ export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
                     </table>
                 </div>
 
-                {items.length > 0 && (
-                    <div className="flex items-center justify-between border-t pt-4">
-                        <div className="text-sm text-muted-foreground">
-                            Showing {invoices.from ?? 0}-{invoices.to ?? items.length} of {invoices.total ?? items.length}
-                        </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                asChild
-                                disabled={!invoices.prev_page_url}
-                            >
-                                <Link href={invoices.prev_page_url || '#'} preserveScroll>
-                                    <ArrowLeft className="h-4 w-4 mr-1" />
-                                    Prev
-                                </Link>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                asChild
-                                disabled={!invoices.next_page_url}
-                            >
-                                <Link href={invoices.next_page_url || '#'} preserveScroll>
-                                    Next
-                                    <ArrowRight className="h-4 w-4 ml-1" />
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
-                )}
+                <Pagination links={invoices?.links} className="border-t" />
             </div>
         </AppLayout>
     );

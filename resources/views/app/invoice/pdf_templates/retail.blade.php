@@ -15,6 +15,14 @@
         $fontSize = $template->font_size ?: 12;
         $lineHeight = $template->line_height ?: 18;
     @endphp
+    @php
+        $currencySymbol = $business_settings['currency_symbol'] ?? '$';
+        $formatMoney = function ($value) use ($currencySymbol) {
+            return $currencySymbol . number_format((float) $value, 2);
+        };
+        $balanceDue = max(0, ($invoice->total ?? 0) - ($invoice->amount_paid ?? 0));
+    @endphp
+
     <style>
         :root {
             --primary: {{ $primary }};
@@ -27,7 +35,7 @@
         body {
             font-family: {{ $fontFamily }} !important;
             margin: 0;
-            padding: 16px;
+            padding: 16px; /* restore padding; iframe isolates styles */
             color: var(--body);
             background: #ffffff;
             font-size: {{ $fontSize }}px;
@@ -60,14 +68,20 @@
 
         <div class="info row">
             <div>
-                <div><strong>MiniMart</strong></div>
-                <div class="muted">123 Corner Street</div>
-                <div class="muted">City Center</div>
+                <div><strong>{{ $business_settings['company_name'] ?? 'Your Business' }}</strong></div>
+                @if (!empty($business_settings['company_address']))
+                    <div class="muted" style="white-space: pre-line;">{{ $business_settings['company_address'] }}</div>
+                @endif
+                @if (!empty($business_settings['company_email']))
+                    <div class="muted">{{ $business_settings['company_email'] }}</div>
+                @endif
             </div>
             <div style="text-align:right;">
-                <div class="muted">Receipt #: RT-0081</div>
-                <div class="muted">Date: Apr 18, 2024</div>
-                <div class="muted">Cashier: Sam</div>
+                <div class="muted">Invoice #: {{ $invoice->invoice_number }}</div>
+                <div class="muted">Date: {{ optional($invoice->invoice_date)->format('M d, Y') }}</div>
+                @if ($invoice->due_date)
+                    <div class="muted">Due: {{ optional($invoice->due_date)->format('M d, Y') }}</div>
+                @endif
             </div>
         </div>
 
@@ -81,53 +95,52 @@
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>Bread (Whole Wheat)</td>
-                    <td>2</td>
-                    <td>$2.50</td>
-                    <td>$5.00</td>
-                </tr>
-                <tr>
-                    <td>Milk 1L</td>
-                    <td>1</td>
-                    <td>$1.80</td>
-                    <td>$1.80</td>
-                </tr>
-                <tr>
-                    <td>Fruit Pack</td>
-                    <td>1</td>
-                    <td>$4.20</td>
-                    <td>$4.20</td>
-                </tr>
-                <tr>
-                    <td>Snacks</td>
-                    <td>3</td>
-                    <td>$1.50</td>
-                    <td>$4.50</td>
-                </tr>
+                @forelse ($invoice->items as $item)
+                    @php
+                        $lineAmount = $item->amount ?? ($item->quantity * $item->unit_price);
+                    @endphp
+                    <tr>
+                        <td>{{ $item->description }}</td>
+                        <td>{{ $item->quantity }}</td>
+                        <td>{{ $formatMoney($item->unit_price) }}</td>
+                        <td>{{ $formatMoney($lineAmount) }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="4" class="center muted" style="padding:12px;">No items added</td>
+                    </tr>
+                @endforelse
             </tbody>
         </table>
 
         <div class="totals">
             <div class="row">
                 <div class="muted">Subtotal</div>
-                <div>$15.50</div>
+                <div>{{ $formatMoney($invoice->subtotal ?? 0) }}</div>
             </div>
             <div class="row">
-                <div class="muted">Tax (5%)</div>
-                <div>$0.78</div>
+                <div class="muted">Tax</div>
+                <div>{{ $formatMoney($invoice->tax_total ?? 0) }}</div>
             </div>
+            @if (($invoice->discount_total ?? 0) > 0)
+                <div class="row">
+                    <div class="muted">Discount</div>
+                    <div>- {{ $formatMoney($invoice->discount_total) }}</div>
+                </div>
+            @endif
             <div class="row total-row">
                 <div>Total</div>
-                <div>$16.28</div>
+                <div>{{ $formatMoney($invoice->total ?? 0) }}</div>
             </div>
-            <div class="row">
-                <div class="muted">Paid</div>
-                <div>$20.00 (Cash)</div>
-            </div>
+            @if (($invoice->amount_paid ?? 0) > 0)
+                <div class="row">
+                    <div class="muted">Paid</div>
+                    <div>- {{ $formatMoney($invoice->amount_paid) }}</div>
+                </div>
+            @endif
             <div class="row total-row">
-                <div>Change</div>
-                <div>$3.72</div>
+                <div>Balance</div>
+                <div>{{ $formatMoney($balanceDue) }}</div>
             </div>
         </div>
 

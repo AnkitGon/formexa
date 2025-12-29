@@ -4,9 +4,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/app-layout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { Plus, Trash2 } from 'lucide-react';
-import { ChangeEvent, FormEventHandler, useEffect, useState } from 'react';
+import { ChangeEvent, FormEventHandler, useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/ui/use-toast';
 
 // Textarea fallback
@@ -23,6 +23,8 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import axios from 'axios';
+import { Toggle } from '@/components/ui/toggle';
+import { AlertTriangle } from 'lucide-react';
 
 declare var route: any; // Fix route error
 
@@ -33,6 +35,7 @@ interface Client {
     email?: string | null;
     address?: string | null;
     tax_id?: string | null;
+    phone?: string | null;
 }
 
 interface Tax {
@@ -77,6 +80,33 @@ const toDateInput = (value?: string) => {
 
 export default function Create({ invoice, clients, nextNumber, today, taxes = [], templates = [] }: InvoiceProps) {
     const isEditing = !!invoice;
+    const autoInvoiceNumber = invoice?.invoice_number || nextNumber || '';
+
+    const normalizeItems = (items: any[] | undefined) => {
+        const incoming = items && items.length ? items : [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null }];
+        return incoming.map((it: any) => {
+            const taxType = it.tax_type === 'fixed' ? 'fixed' : 'percent';
+            const taxRate = it.tax_rate ?? 0;
+            let taxId = it.tax_id ?? null;
+
+            if ((taxId === null || taxId === undefined) && taxes.length) {
+                const match = taxes.find(t => {
+                    const tType = t.type === 'fixed' ? 'fixed' : 'percent';
+                    return tType === taxType && Number(t.value ?? 0) === Number(taxRate ?? 0);
+                });
+                if (match) {
+                    taxId = match.id;
+                }
+            }
+
+            return {
+                ...it,
+                tax_type: taxType,
+                tax_id: taxId,
+                tax_rate: taxRate,
+            };
+        }) as any[];
+    };
 
     const { data, setData, post, put, processing, errors, clearErrors, setError } = useForm<InvoiceFormData>({
         client_id: invoice?.client_id || '',
@@ -86,15 +116,12 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
         status: invoice?.status || 'draft',
         notes: invoice?.notes || '',
         invoice_template_id: invoice?.invoice_template_id || null,
-        items: (invoice?.items || [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null }]).map((it: any) => ({
-            ...it,
-            tax_type: it.tax_type || 'percent',
-            tax_id: it.tax_id ?? null,
-            tax_rate: it.tax_rate ?? 0,
-        })) as any[],
+        items: normalizeItems(invoice?.items),
     });
 
     const [totals, setTotals] = useState({ subtotal: 0, tax: 0, total: 0 });
+    const [allowManualInvoiceNumber, setAllowManualInvoiceNumber] = useState<boolean>(false);
+    const [paymentTerms, setPaymentTerms] = useState<string>('due_on_receipt');
     const [clientList, setClientList] = useState<Client[]>(clients);
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [selectedTemplate, setSelectedTemplate] = useState<string | undefined>(
@@ -257,6 +284,41 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
         setData('items', newItems);
     };
 
+    const paymentTermsOptions = useMemo(
+        () => [
+            { value: 'due_on_receipt', label: 'Due on receipt', days: 0 },
+            { value: 'net_7', label: 'Net 7', days: 7 },
+            { value: 'net_15', label: 'Net 15', days: 15 },
+            { value: 'net_30', label: 'Net 30', days: 30 },
+            { value: 'custom', label: 'Custom', days: null },
+        ],
+        [],
+    );
+
+    useEffect(() => {
+        if (!allowManualInvoiceNumber) {
+            setData('invoice_number', autoInvoiceNumber);
+        }
+    }, [allowManualInvoiceNumber, autoInvoiceNumber, setData]);
+
+    const computeDueDate = (issued: string, terms: string) => {
+        const option = paymentTermsOptions.find((o) => o.value === terms);
+        if (!option || option.days === null) return null;
+        if (!issued) return '';
+        const issuedDate = new Date(issued);
+        if (Number.isNaN(issuedDate.getTime())) return '';
+        const due = new Date(issuedDate);
+        due.setDate(due.getDate() + option.days);
+        return due.toISOString().slice(0, 10);
+    };
+
+    useEffect(() => {
+        const nextDue = computeDueDate(data.invoice_date, paymentTerms);
+        if (nextDue !== null) {
+            setData('due_date', nextDue);
+        }
+    }, [data.invoice_date, paymentTerms, setData]);
+
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
         const clientId = data.client_id || selectedClient?.id;
@@ -335,7 +397,17 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Template</Label>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <Label>Template</Label>
+                                            <Link
+                                                href="/template/create"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-xs font-medium text-primary hover:underline hover:underline-offset-4"
+                                            >
+                                                Create one
+                                            </Link>
+                                        </div>
                                         <Select
                                             value={selectedTemplate}
                                             onValueChange={(val) => {
@@ -360,7 +432,7 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                         </Select>
                                         {errors.invoice_template_id && <p className="text-sm text-red-500">{errors.invoice_template_id}</p>}
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                         <Label>Client</Label>
                                         <div className="flex gap-2">
                                             <Select
@@ -389,10 +461,9 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                            {errors.client_id && <p className="text-sm text-red-500">{errors.client_id}</p>}
                                             <Dialog open={isClientModalOpen} onOpenChange={setIsClientModalOpen}>
                                                 <DialogTrigger asChild>
-                                                    <Button type="button" variant="outline" size="icon">
+                                                    <Button type="button" variant="outline" size="icon" title="Add new client">
                                                         <Plus className="h-4 w-4" />
                                                     </Button>
                                                 </DialogTrigger>
@@ -435,7 +506,9 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                             <Input
                                                                 type="email"
                                                                 value={newClientData.email}
-                                                                onChange={e => setNewClientData({ ...newClientData, email: e.target.value })}
+                                                                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                                                                    setNewClientData({ ...newClientData, email: e.target.value })
+                                                                }
                                                             />
                                                         </div>
                                                         <div className="grid grid-cols-2 gap-4">
@@ -443,14 +516,18 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                                 <Label>Phone</Label>
                                                                 <Input
                                                                     value={newClientData.phone}
-                                                                    onChange={e => setNewClientData({ ...newClientData, phone: e.target.value })}
+                                                                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                                                                        setNewClientData({ ...newClientData, phone: e.target.value })
+                                                                    }
                                                                 />
                                                             </div>
                                                             <div className="space-y-2">
                                                                 <Label>Address</Label>
                                                                 <Input
                                                                     value={newClientData.address}
-                                                                    onChange={e => setNewClientData({ ...newClientData, address: e.target.value })}
+                                                                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                                                                        setNewClientData({ ...newClientData, address: e.target.value })
+                                                                    }
                                                                 />
                                                             </div>
                                                         </div>
@@ -458,7 +535,9 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                             <Label>Notes</Label>
                                                             <Textarea
                                                                 value={newClientData.notes}
-                                                                onChange={e => setNewClientData({ ...newClientData, notes: e.target.value })}
+                                                                onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                                                                    setNewClientData({ ...newClientData, notes: e.target.value })
+                                                                }
                                                                 rows={3}
                                                             />
                                                         </div>
@@ -471,50 +550,153 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                 </DialogContent>
                                             </Dialog>
                                         </div>
+                                        {errors.client_id && <p className="text-sm text-red-500">{errors.client_id}</p>}
+                                        {selectedClient && (
+                                            <div className="rounded-md border border-sidebar-border/60 bg-muted/30 p-3 text-sm space-y-1">
+                                                <div className="font-semibold text-foreground">
+                                                    {selectedClient.company_name || selectedClient.name}
+                                                </div>
+                                                <div className="text-muted-foreground">{selectedClient.name}</div>
+                                                {selectedClient.email && (
+                                                    <div className="text-muted-foreground">{selectedClient.email}</div>
+                                                )}
+                                                {selectedClient.phone && (
+                                                    <div className="text-muted-foreground">{selectedClient.phone}</div>
+                                                )}
+                                                {selectedClient.address && (
+                                                    <div className="text-muted-foreground">Address: {selectedClient.address}</div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <div className="space-y-2">
-                                        <Label>Invoice #</Label>
-                                        <Input
-                                            value={data.invoice_number}
-                                            onChange={e => setData('invoice_number', e.target.value)}
-                                            className="font-mono"
-                                        />
-                                        {errors.invoice_number && <p className="text-sm text-red-500">{errors.invoice_number}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Status</Label>
-                                        <Select value={data.status} onValueChange={(val) => setData('status', val)}>
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="draft">Draft</SelectItem>
-                                                <SelectItem value="sent">Sent</SelectItem>
-                                                <SelectItem value="paid">Paid</SelectItem>
-                                                <SelectItem value="partially_paid">Partially Paid</SelectItem>
-                                                <SelectItem value="overdue">Overdue</SelectItem>
-                                                <SelectItem value="cancelled">Cancelled</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Issued Date</Label>
-                                        <Input
-                                            type="date"
-                                            value={data.invoice_date}
-                                            onChange={e => setData('invoice_date', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Due Date</Label>
-                                        <Input
-                                            type="date"
-                                            value={data.due_date}
-                                            onChange={e => setData('due_date', e.target.value)}
-                                        />
+                                <div className="rounded-lg border border-sidebar-border/60 bg-muted/20 p-4 space-y-4">
+                                    <div className="text-sm font-medium text-muted-foreground">Invoice metadata</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <Label className="m-0">Invoice #</Label>
+                                                <div className="flex items-center gap-2 text-sm">
+                                                    <span className="text-muted-foreground text-xs">Auto-generate</span>
+                                                    <Toggle
+                                                        pressed={!allowManualInvoiceNumber}
+                                                        onPressedChange={(pressed) => {
+                                                            const isAuto = pressed;
+                                                            setAllowManualInvoiceNumber(!isAuto);
+                                                            if (isAuto) {
+                                                                setData('invoice_number', autoInvoiceNumber);
+                                                            }
+                                                        }}
+                                                        aria-label="Toggle auto invoice number"
+                                                        className="h-6 w-12 rounded-full bg-muted/70 px-1 data-[state=on]:bg-primary/80"
+                                                    >
+                                                        <span
+                                                            className={`h-4 w-4 rounded-full bg-background shadow transition-transform ${!allowManualInvoiceNumber ? 'translate-x-5' : 'translate-x-0'}`}
+                                                        />
+                                                    </Toggle>
+                                                    <span className="text-muted-foreground text-xs">Manual</span>
+                                                </div>
+                                            </div>
+
+                                            <Input
+                                                value={data.invoice_number}
+                                                onChange={e => setData('invoice_number', e.target.value)}
+                                                readOnly={!allowManualInvoiceNumber}
+                                                className={`font-mono ${!allowManualInvoiceNumber ? 'bg-muted cursor-not-allowed opacity-80' : ''}`}
+                                                placeholder={autoInvoiceNumber || 'INV-YYYY-0001'}
+                                                aria-describedby="invoice-number-helper"
+                                            />
+                                            {!allowManualInvoiceNumber ? (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Auto-generated numbers follow a continuous legal sequence.
+                                                </p>
+                                            ) : (
+                                                <div className="space-y-1">
+                                                    <div className="flex items-start gap-2 text-xs text-amber-600">
+                                                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                                        <p>Manual invoice numbers may break legal or accounting sequence.</p>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        You’re responsible for ensuring invoice number uniqueness.
+                                                    </p>
+                                                </div>
+                                            )}
+                                            {errors.invoice_number && (
+                                                <p className="text-sm text-red-500">{errors.invoice_number}</p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Status</Label>
+                                            <Select
+                                                value={data.status}
+                                                onValueChange={(val) => setData('status', val)}
+                                                disabled={!isEditing}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="draft">Draft</SelectItem>
+                                                    <SelectItem value="sent">Sent</SelectItem>
+                                                    <SelectItem value="paid">Paid</SelectItem>
+                                                    <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                                                    <SelectItem value="overdue">Overdue</SelectItem>
+                                                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            {!isEditing && (
+                                                <p className="text-xs text-muted-foreground">Status starts as Draft when creating.</p>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Issued Date</Label>
+                                            <Input
+                                                type="date"
+                                                value={data.invoice_date}
+                                                onChange={e => setData('invoice_date', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Payment Terms</Label>
+                                            <Select
+                                                value={paymentTerms}
+                                                onValueChange={(val) => setPaymentTerms(val)}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select terms" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {paymentTermsOptions.map((opt) => (
+                                                        <SelectItem key={opt.value} value={opt.value}>
+                                                            {opt.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Due Date</Label>
+                                            <Input
+                                                type="date"
+                                                value={data.due_date}
+                                                readOnly={paymentTerms !== 'custom'}
+                                                onChange={e => {
+                                                    const next = e.target.value;
+                                                    // If user edits while on non-custom terms, switch to custom
+                                                    if (paymentTerms !== 'custom') {
+                                                        setPaymentTerms('custom');
+                                                    }
+                                                    setData('due_date', next);
+                                                }}
+                                                className={paymentTerms !== 'custom' ? 'bg-muted cursor-not-allowed opacity-80' : ''}
+                                            />
+                                            {paymentTerms !== 'custom' && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Calculated from issued date and terms.
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -593,19 +775,27 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                 <div className="col-span-6 md:col-span-2">
                                                     <Label className="text-xs text-muted-foreground">Tax</Label>
                                                     <Select
-                                                        value={item.tax_id ? String(item.tax_id) : undefined}
+                                                        value={
+                                                            item.tax_id !== null && item.tax_id !== undefined
+                                                                ? String(item.tax_id)
+                                                                : 'none'
+                                                        }
                                                         onValueChange={(val) => {
+                                                            const newItems = [...data.items];
                                                             if (val === 'none') {
-                                                                updateItem(index, 'tax_id', null);
-                                                                updateItem(index, 'tax_type', 'percent');
-                                                                updateItem(index, 'tax_rate', 0);
+                                                                newItems[index] = { ...newItems[index], tax_id: null, tax_type: 'percent', tax_rate: 0 };
+                                                                setData('items', newItems);
                                                                 return;
                                                             }
                                                             const picked = taxes.find(t => String(t.id) === val);
                                                             if (picked) {
-                                                                updateItem(index, 'tax_id', picked.id);
-                                                                updateItem(index, 'tax_type', picked.type === 'fixed' ? 'fixed' : 'percent');
-                                                                updateItem(index, 'tax_rate', picked.value);
+                                                                newItems[index] = {
+                                                                    ...newItems[index],
+                                                                    tax_id: picked.id,
+                                                                    tax_type: picked.type === 'fixed' ? 'fixed' : 'percent',
+                                                                    tax_rate: picked.value,
+                                                                };
+                                                                setData('items', newItems);
                                                             }
                                                         }}
                                                     >
@@ -669,7 +859,7 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                 </div>
                                 <div className="flex justify-end gap-2">
                                     <Button type="submit" disabled={processing}>
-                                        Save
+                                        {isEditing ? 'Save' : 'Save Draft'}
                                     </Button>
                                 </div>
                             </div>

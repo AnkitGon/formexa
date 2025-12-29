@@ -11,6 +11,7 @@ import { Form, Head, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import TaxForm from './tax-form';
 import { Button } from '@/components/ui/button';
+import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -137,6 +138,7 @@ export default function TaxIndex() {
                                         <div className="flex justify-end gap-2">
                                             <Button variant="outline" 
                                                 type="button"
+                                                size="sm"
                                                 onClick={() => {
                                                     setDialogMode('edit');
                                                     setActiveTaxId(Number(t.id));
@@ -155,28 +157,11 @@ export default function TaxIndex() {
                                             >
                                                 Edit
                                             </Button>
-                                            <Form
-                                                method="post"
+                                            <ConfirmDeleteButton
                                                 action={`/taxes/${t.id}`}
-                                                className="inline"
-                                                onSubmit={(e) => {
-                                                    if (!window.confirm('Are you sure you want to delete this item?')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                <input
-                                                    type="hidden"
-                                                    name="_method"
-                                                    value="DELETE"
-                                                />
-                                                <Button
-                                                    type="submit"
-                                                    variant="destructive" 
-                                                >
-                                                    Delete
-                                                </Button>
-                                            </Form>
+                                                itemLabel={`tax ${t.name}`}
+                                                triggerText="Delete"
+                                            />
                                         </div>
                                     </td>
                                 </tr>

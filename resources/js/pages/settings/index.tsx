@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { Image as ImageIcon, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type TabId = 'brand' | 'system';
+type TabId = 'brand' | 'system' | 'invoice';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -43,6 +43,7 @@ export default function SettingsIndex({
         logo_dark_url?: string | null;
         logo_light_url?: string | null;
         favicon_url?: string | null;
+        invoice_logo_url?: string | null;
     };
     settings?: Record<string, string | null>;
     currencies?: Array<{ value: string; label: string }>;
@@ -80,6 +81,11 @@ export default function SettingsIndex({
                     id: 'system' as const,
                     title: 'System',
                     description: 'Defaults and localization preferences',
+                },
+                {
+                    id: 'invoice' as const,
+                    title: 'Invoice',
+                    description: 'Numbering and identity',
                 },
             ] satisfies Array<{ id: TabId; title: string; description: string }>,
         [],
@@ -130,9 +136,21 @@ export default function SettingsIndex({
     const [systemErrors, setSystemErrors] = useState<Record<string, string | undefined>>({});
     const [isSavingSystem, setIsSavingSystem] = useState(false);
 
+    const [invoicePrefix, setInvoicePrefix] = useState<string>(
+        (settings?.invoice_prefix as string | null) ?? 'INV-',
+    );
+    const [invoiceSeries, setInvoiceSeries] = useState<string>(
+        (settings?.invoice_series as string | null) ?? new Date().getFullYear().toString(),
+    );
+    const [invoiceLogo, setInvoiceLogo] = useState<File | null>(null);
+    const [invoiceLogoError, setInvoiceLogoError] = useState<string | undefined>();
+    const [invoiceErrors, setInvoiceErrors] = useState<Record<string, string | undefined>>({});
+    const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+
     const logoDarkRef = useRef<HTMLInputElement | null>(null);
     const logoLightRef = useRef<HTMLInputElement | null>(null);
     const faviconRef = useRef<HTMLInputElement | null>(null);
+    const invoiceLogoInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         setDateFormat((settings?.date_format as string | null) ?? 'YYYY-MM-DD');
@@ -142,12 +160,18 @@ export default function SettingsIndex({
         setCurrencySymbolPosition(
             (settings?.currency_symbol_position as string | null) ?? 'prefix',
         );
+        setInvoicePrefix((settings?.invoice_prefix as string | null) ?? 'INV-');
+        setInvoiceSeries(
+            (settings?.invoice_series as string | null) ?? new Date().getFullYear().toString(),
+        );
     }, [
         settings?.date_format,
         settings?.time_format,
         settings?.default_currency,
         settings?.currency_symbol_position,
         currencyOptions,
+        settings?.invoice_prefix,
+        settings?.invoice_series,
     ]);
 
     const validateImageFile = (file: File | null): string | null => {
@@ -694,6 +718,158 @@ export default function SettingsIndex({
 
                                         <div className="flex justify-end">
                                             <Button type="submit" disabled={isSavingSystem}>
+                                                Save
+                                            </Button>
+                                        </div>
+                                    </form>
+                                )}
+
+                                {activeTab === 'invoice' && (
+                                    <form
+                                        className="space-y-6"
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            setInvoiceErrors({});
+                                            router.post(
+                                                '/settings',
+                                                {
+                                                    invoice_prefix: invoicePrefix,
+                                                    invoice_series: invoiceSeries,
+                                                    invoice_logo: invoiceLogo,
+                                                },
+                                                {
+                                                    preserveScroll: true,
+                                                    forceFormData: true,
+                                                    onStart: () => setIsSavingInvoice(true),
+                                                    onFinish: () => setIsSavingInvoice(false),
+                                                    onSuccess: () => {
+                                                        setInvoiceLogo(null);
+                                                        setInvoiceLogoError(undefined);
+                                                    },
+                                                    onError: (errors) => {
+                                                        setInvoiceErrors(errors as Record<string, string>);
+                                                    },
+                                                },
+                                            );
+                                        }}
+                                    >
+                                        <div className="grid gap-4 lg:grid-cols-2">
+                                            <div className="space-y-2 lg:col-span-2">
+                                                <Label className="flex items-center justify-between">
+                                                    <span>Invoice logo</span>
+                                                    <span className="text-xs text-muted-foreground">Shown on all invoices</span>
+                                                </Label>
+                                                <div className={cn(
+                                                    'flex items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 transition-colors',
+                                                    invoiceLogoError
+                                                        ? 'border-destructive/60 bg-destructive/5'
+                                                        : 'border-sidebar-border/60 bg-muted/20 hover:border-primary/40'
+                                                )}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-12 w-12 rounded-md border border-sidebar-border/60 bg-background shadow-sm overflow-hidden">
+                                                            {invoiceLogo ? (
+                                                                <img
+                                                                    src={URL.createObjectURL(invoiceLogo)}
+                                                                    alt="Invoice logo preview"
+                                                                    className="h-full w-full object-contain p-1"
+                                                                />
+                                                            ) : brand?.invoice_logo_url ? (
+                                                                <img
+                                                                    src={brand.invoice_logo_url}
+                                                                    alt="Current invoice logo"
+                                                                    className="h-full w-full object-contain p-1"
+                                                                />
+                                                            ) : (
+                                                                <ImageIcon className="h-5 w-5 m-auto text-muted-foreground" />
+                                                            )}
+                                                        </div>
+                                                        <div className="space-y-1 text-sm">
+                                                            <div className="font-medium">Upload logo</div>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                This logo will be used across all invoices.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {invoiceLogo && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    setInvoiceLogo(null);
+                                                                    setInvoiceLogoError(undefined);
+                                                                }}
+                                                            >
+                                                                <X className="h-4 w-4 mr-1" />
+                                                                Clear
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => invoiceLogoInputRef.current?.click()}
+                                                        >
+                                                            Choose file
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    ref={invoiceLogoInputRef}
+                                                    type="file"
+                                                    className="hidden"
+                                                    accept=".jpg,.jpeg,.png,.svg,.webp,image/jpeg,image/png,image/svg+xml,image/webp"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0] ?? null;
+                                                        const err = validateImageFile(file);
+                                                        if (err) {
+                                                            setInvoiceLogo(null);
+                                                            setInvoiceLogoError(err);
+                                                        } else {
+                                                            setInvoiceLogo(file);
+                                                            setInvoiceLogoError(undefined);
+                                                        }
+                                                        e.currentTarget.value = '';
+                                                    }}
+                                                />
+                                                <InputError message={invoiceLogoError} />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="invoice_prefix">Invoice prefix / series</Label>
+                                                <Input
+                                                    id="invoice_prefix"
+                                                    value={invoicePrefix}
+                                                    onChange={(e) => setInvoicePrefix(e.target.value)}
+                                                    placeholder="INV-"
+                                                    className="font-mono"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Prefix shown before the series (e.g., INV-).
+                                                </p>
+                                                <InputError message={invoiceErrors.invoice_prefix} />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="invoice_series">Series</Label>
+                                                <Input
+                                                    id="invoice_series"
+                                                    value={invoiceSeries}
+                                                    onChange={(e) => setInvoiceSeries(e.target.value)}
+                                                    placeholder={new Date().getFullYear().toString()}
+                                                    className="font-mono"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    Commonly a year or business unit (e.g., 2025).
+                                                </p>
+                                                <InputError message={invoiceErrors.invoice_series} />
+                                            </div>
+                                        </div>
+
+                                        <Separator />
+
+                                        <div className="flex justify-end">
+                                            <Button type="submit" disabled={isSavingInvoice}>
                                                 Save
                                             </Button>
                                         </div>

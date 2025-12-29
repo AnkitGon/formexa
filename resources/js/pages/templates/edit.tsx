@@ -9,21 +9,27 @@ const breadcrumbs: BreadcrumbItem[] = [
         href: '/template',
     },
     {
-        title: 'Create',
-        href: '/template/create',
+        title: 'Edit',
+        href: '#',
     },
 ];
 
-export default function SalarySlipTemplateCreate() {
-    const { designOptions } = usePage<SharedData & { designOptions: any }>().props;
+export default function SalarySlipTemplateEdit({
+    template,
+}: {
+    template: any;
+}) {
+    const { designOptions, branding } = usePage<
+        SharedData & { designOptions: any; branding?: { invoice_logo_url?: string | null } }
+    >().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Create Template" />
+            <Head title="Edit Template" />
 
             <div className="flex flex-col gap-4 p-4">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-lg font-semibold">Create Template</h1>
+                    <h1 className="text-lg font-semibold">Edit Template</h1>
                     <Link
                         href="/template"
                         className="rounded-md border border-sidebar-border/70 px-3 py-2 text-sm"
@@ -33,9 +39,11 @@ export default function SalarySlipTemplateCreate() {
                 </div>
 
                 <SalarySlipTemplateForm
-                    mode="create"
-                    action="/template"
+                    mode="edit"
+                    action={`/template/${template.id}`}
                     designOptions={designOptions}
+                    template={template}
+                    branding={branding}
                 />
             </div>
         </AppLayout>

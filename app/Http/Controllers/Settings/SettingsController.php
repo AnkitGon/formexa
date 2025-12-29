@@ -22,7 +22,7 @@ class SettingsController extends Controller
 
         $settings = UserSetting::getMapForUser($user->id);
 
-        $brandingKeys = ['logo_dark', 'logo_light', 'favicon'];
+        $brandingKeys = ['logo_dark', 'logo_light', 'favicon', 'invoice_logo'];
         $userBranding = array_intersect_key($settings, array_flip($brandingKeys));
 
         $adminId = null;
@@ -44,6 +44,7 @@ class SettingsController extends Controller
         $logoDarkPath = $userBranding['logo_dark'] ?? $adminBranding['logo_dark'] ?? null;
         $logoLightPath = $userBranding['logo_light'] ?? $adminBranding['logo_light'] ?? null;
         $faviconPath = $userBranding['favicon'] ?? $adminBranding['favicon'] ?? null;
+        $invoiceLogoPath = $userBranding['invoice_logo'] ?? $adminBranding['invoice_logo'] ?? null;
 
         return Inertia::render('settings/index', [
             'settings' => $settings,
@@ -51,6 +52,7 @@ class SettingsController extends Controller
                 'logo_dark_url' => $logoDarkPath ? asset('storage/'.$logoDarkPath) : null,
                 'logo_light_url' => $logoLightPath ? asset('storage/'.$logoLightPath) : null,
                 'favicon_url' => $faviconPath ? asset('storage/'.$faviconPath) : null,
+                'invoice_logo_url' => $invoiceLogoPath ? asset('storage/'.$invoiceLogoPath) : null,
             ],
             'currencies' => config('currencies.options'),
         ]);
@@ -59,6 +61,12 @@ class SettingsController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $user = $request->user();
+
+        $existing = UserSetting::getMapForUser($user->id);
+
+        $validatedFiles = $request->validate([
+            'invoice_logo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,svg,webp', 'max:4096'],
+        ]);
 
         $incoming = $request->input('settings');
         if (!is_array($incoming)) {
@@ -87,10 +95,27 @@ class SettingsController extends Controller
             $settings[$key] = $value;
         }
 
+        $deletes = [];
+        if ($request->hasFile('invoice_logo')) {
+            $file = $validatedFiles['invoice_logo'];
+            $path = $this->storeBrandFile($user->id, 'invoice_logo', $file);
+            $settings['invoice_logo'] = $path;
+            $old = $existing['invoice_logo'] ?? null;
+            if ($old && $old !== $path) {
+                $deletes[] = $old;
+            }
+        }
+
         UserSetting::upsertForUser($user->id, $settings);
 
         Cache::forget("user_settings:{$user->id}:branding");
         Cache::forget("user_settings:{$user->id}:salary_slip_defaults");
+
+        foreach ($deletes as $oldPath) {
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
 
         return back();
     }

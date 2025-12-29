@@ -23,24 +23,24 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
     {
-        title: 'Invoices',
-        href: '/invoices',
-        icon: Receipt,
-    },
-    {
         title: 'Clients',
         href: '/clients',
         icon: Users,
     },
     {
-        title: 'Salary Slips',
-        href: '/salary-slip',
-        icon: FileText,
-    },
-    {
         title: 'Templates',
         href: '/template',
         icon: LayoutTemplate,
+    },
+    {
+        title: 'Invoices',
+        href: '/invoices',
+        icon: Receipt,
+    },
+    {
+        title: 'Salary Slips',
+        href: '/salary-slip',
+        icon: FileText,
     },
     {
         title: 'Taxes',

@@ -12,7 +12,7 @@ import AppLayout from '@/layouts/app-layout';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Pencil, Printer, ArrowLeft, MoreHorizontal, Mail, Copy, FileText } from 'lucide-react';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Invoice {
     id: number;
@@ -35,6 +35,8 @@ interface Invoice {
     template_style?: string;
     primary_color?: string;
     show_logo?: boolean | number | string;
+    thousands_separator?: string;
+    decimal_separator?: string;
 }
 
 interface Business {
@@ -44,13 +46,41 @@ interface Business {
     company_address?: string;
 }
 
-export default function Show({ invoice, business }: { invoice: Invoice, business: Business }) {
+interface BusinessSettings {
+    company_name?: string;
+    company_email?: string;
+    company_address?: string;
+    logo_url?: string;
+    currency_symbol?: string;
+    currency_position?: string;
+    decimal_precision?: number | string;
+    thousands_separator?: string;
+    decimal_separator?: string;
+    invoice_template?: string;
+    primary_color?: string;
+    show_logo?: boolean | string | number;
+}
+
+export default function Show({ invoice, business, business_settings, renderedTemplate }: { invoice: Invoice, business: Business, business_settings: BusinessSettings, renderedTemplate?: string }) {
     const { branding, settingsDefaults } = usePage().props as any;
-    console.log(
-        branding
-    );
-    
-    const logoUrl = branding?.logo_light_url || branding?.logo_dark_url || business.logo_url;
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const adjustIframeHeight = () => {
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!doc?.body) return;
+        const height = doc.body.scrollHeight;
+        if (height) {
+            iframe.style.height = `${height}px`;
+        }
+    };
+
+    useEffect(() => {
+        const t = setTimeout(adjustIframeHeight, 150);
+        return () => clearTimeout(t);
+    }, [renderedTemplate]);
+
+    const logoUrl = branding?.logo_light_url || branding?.logo_dark_url || business_settings?.logo_url || business.logo_url;
     const dateFormat = (settingsDefaults?.date_format as string | null) ?? 'YYYY-MM-DD';
     const timeFormat = (settingsDefaults?.time_format as string | null) ?? 'hh:mm A';
 
@@ -101,19 +131,21 @@ export default function Show({ invoice, business }: { invoice: Invoice, business
         client: invoice.client,
 
         // Pass through styling props
-        currency_symbol: invoice.currency_symbol,
-        currency_position: invoice.currency_position as any,
-        decimal_precision: invoice.decimal_precision,
-        template_style: invoice.template_style,
-        primary_color: invoice.primary_color,
-        show_logo: invoice.show_logo,
+        currency_symbol: invoice.currency_symbol || business_settings?.currency_symbol || '$',
+        currency_position: (invoice.currency_position || business_settings?.currency_position || 'before') as any,
+        decimal_precision: Number(invoice.decimal_precision || business_settings?.decimal_precision || 2),
+        thousands_separator: invoice.thousands_separator || business_settings?.thousands_separator || ',',
+        decimal_separator: invoice.decimal_separator || business_settings?.decimal_separator || '.',
+        template_style: invoice.template_style || business_settings?.invoice_template || 'classic',
+        primary_color: invoice.primary_color || business_settings?.primary_color || '#000000',
+        show_logo: invoice.show_logo !== undefined ? Boolean(invoice.show_logo) : (business_settings?.show_logo === '1' || business_settings?.show_logo === true),
     };
 
     const businessData: BusinessData = {
-        name: business.name,
-        email: business.email,
+        name: business_settings?.company_name || business.name,
+        email: business_settings?.company_email || business.email,
         logo_url: logoUrl,
-        address: business.company_address // Ensure this is passed from controller if available
+        address: business_settings?.company_address || business.company_address // Ensure this is passed from controller if available
     };
 
     return (
@@ -163,13 +195,26 @@ export default function Show({ invoice, business }: { invoice: Invoice, business
                     </div>
                 </div>
 
-                {/* Invoice Paper Preview */}
-                <div className="mx-auto w-full max-w-[210mm] shadow-lg rounded-sm overflow-hidden">
-                    <InvoicePaper
-                        data={invoiceData}
-                        business={businessData}
-                        className="min-h-[297mm] p-[20mm]"
-                    />
+                {/* Invoice Template Preview (rendered from PDF blade) */}
+                <div className="w-full flex justify-center px-4 md:px-0">
+                    <div className="w-[210mm] max-w-full min-w-0 shadow-lg rounded-sm overflow-hidden bg-white">
+                    {renderedTemplate ? (
+                        <iframe
+                            ref={iframeRef}
+                            srcDoc={renderedTemplate}
+                            className="w-full border-0 block bg-white pointer-events-none"
+                            style={{ width: '100%', overflow: 'hidden', pointerEvents: 'none' }}
+                            scrolling="no"
+                            onLoad={adjustIframeHeight}
+                        />
+                    ) : (
+                        <InvoicePaper
+                            data={invoiceData}
+                            business={businessData}
+                            className="p-[20mm]"
+                        />
+                    )}
+                    </div>
                 </div>
             </div>
         </AppLayout>

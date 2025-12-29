@@ -42,6 +42,7 @@ type TemplateFormValues = {
     line_height?: number | string;
     is_active?: boolean;
     document_type?: string;
+    show_logo?: boolean | number | string | null;
 };
 
 type Props = {
@@ -49,6 +50,9 @@ type Props = {
     action: string;
     designOptions: Record<string, string>;
     template?: TemplateFormValues;
+    branding?: {
+        invoice_logo_url?: string | null;
+    };
 };
 
 export default function SalarySlipTemplateForm({
@@ -56,6 +60,7 @@ export default function SalarySlipTemplateForm({
     action,
     designOptions,
     template,
+    branding,
 }: Props) {
     const DEFAULT_FONT = 'default';
     const csrfToken = getCsrfToken();
@@ -132,6 +137,21 @@ export default function SalarySlipTemplateForm({
     const [fontFamily, setFontFamily] = useState<string>(
         template?.font_family ?? DEFAULT_FONT,
     );
+    const [primaryColor, setPrimaryColor] = useState<string>(
+        normalizeColor(template?.primary_color, '#95979b'),
+    );
+    const [accentColor, setAccentColor] = useState<string>(
+        normalizeColor(template?.accent_color, '#111827'),
+    );
+    const [secondaryColor, setSecondaryColor] = useState<string>(
+        normalizeColor(template?.secondary_color, '#111827'),
+    );
+    const [showLogo, setShowLogo] = useState<boolean>(() => {
+        const incoming = template?.show_logo;
+        if (incoming === undefined || incoming === null) return true;
+        if (incoming === '0' || incoming === 0) return false;
+        return Boolean(incoming);
+    });
     const previewTimeoutRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -252,6 +272,7 @@ export default function SalarySlipTemplateForm({
                     {mode === 'edit' && (
                         <input type="hidden" name="_method" value="PUT" />
                     )}
+                    <input type="hidden" name="show_logo" value={showLogo ? '1' : '0'} />
 
                     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                         <div className="space-y-6">
@@ -340,6 +361,39 @@ export default function SalarySlipTemplateForm({
                                 </div>
                             </div>
 
+                            {documentType === 'invoice' && (
+                                <div className="grid gap-2 rounded-lg border border-sidebar-border/60 bg-muted/20 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <Checkbox
+                                                id="show_logo"
+                                                checked={showLogo}
+                                                disabled={!branding?.invoice_logo_url}
+                                                onCheckedChange={(val) => {
+                                                    const next = Boolean(val);
+                                                    setShowLogo(next);
+                                                    triggerFormChange();
+                                                }}
+                                            />
+                                            <Label htmlFor="show_logo" className="m-0">
+                                                Show company logo on invoice
+                                            </Label>
+                                        </div>
+                                        {!branding?.invoice_logo_url && (
+                                            <span className="text-xs text-muted-foreground">Logo not uploaded</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Uses the logo uploaded in Settings.
+                                    </p>
+                                    {!branding?.invoice_logo_url && (
+                                        <p className="text-xs text-muted-foreground">
+                                            Upload a logo in Settings to enable this option.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="grid gap-4 md:grid-cols-3">
                                 <div className="grid gap-2">
                                     <Label htmlFor="font_family">Font family</Label>
@@ -409,47 +463,92 @@ export default function SalarySlipTemplateForm({
                             <div className="grid gap-4 md:grid-cols-3">
                                 <div className="grid gap-2">
                                     <Label htmlFor="primary_color">Primary color</Label>
-                                    <Input
-                                        id="primary_color"
-                                        name="primary_color"
-                                        type="color"
-                                        defaultValue={
-                                            normalizeColor(
-                                                template?.primary_color,
-                                                '#95979b',
-                                            )
-                                        }
-                                    />
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            id="primary_color"
+                                            name="primary_color"
+                                            type="color"
+                                            value={primaryColor}
+                                            onChange={(e) => {
+                                                setPrimaryColor(e.target.value);
+                                                triggerFormChange();
+                                            }}
+                                            className="w-14 p-1"
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={primaryColor}
+                                            onChange={(e) => {
+                                                setPrimaryColor(normalizeColor(e.target.value, primaryColor));
+                                                triggerFormChange();
+                                            }}
+                                            onBlur={(e) => {
+                                                setPrimaryColor(normalizeColor(e.target.value, primaryColor));
+                                            }}
+                                            className="font-mono text-xs"
+                                            title={primaryColor}
+                                        />
+                                    </div>
                                     <InputError message={(errors as any).primary_color} />
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="accent_color">Accent color</Label>
-                                    <Input
-                                        id="accent_color"
-                                        name="accent_color"
-                                        type="color"
-                                        defaultValue={
-                                            normalizeColor(
-                                                template?.accent_color,
-                                                '#111827',
-                                            )
-                                        }
-                                    />
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            id="accent_color"
+                                            name="accent_color"
+                                            type="color"
+                                            value={accentColor}
+                                            onChange={(e) => {
+                                                setAccentColor(e.target.value);
+                                                triggerFormChange();
+                                            }}
+                                            className="w-14 p-1"
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={accentColor}
+                                            onChange={(e) => {
+                                                setAccentColor(normalizeColor(e.target.value, accentColor));
+                                                triggerFormChange();
+                                            }}
+                                            onBlur={(e) => {
+                                                setAccentColor(normalizeColor(e.target.value, accentColor));
+                                            }}
+                                            className="font-mono text-xs"
+                                            title={accentColor}
+                                        />
+                                    </div>
                                     <InputError message={(errors as any).accent_color} />
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="secondary_color">Body text color</Label>
-                                    <Input
-                                        id="secondary_color"
-                                        name="secondary_color"
-                                        type="color"
-                                        defaultValue={
-                                            normalizeColor(
-                                                template?.secondary_color,
-                                                '#111827',
-                                            )
-                                        }
-                                    />
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            id="secondary_color"
+                                            name="secondary_color"
+                                            type="color"
+                                            value={secondaryColor}
+                                            onChange={(e) => {
+                                                setSecondaryColor(e.target.value);
+                                                triggerFormChange();
+                                            }}
+                                            className="w-14 p-1"
+                                        />
+                                        <Input
+                                            type="text"
+                                            value={secondaryColor}
+                                            onChange={(e) => {
+                                                setSecondaryColor(normalizeColor(e.target.value, secondaryColor));
+                                                triggerFormChange();
+                                            }}
+                                            onBlur={(e) => {
+                                                setSecondaryColor(normalizeColor(e.target.value, secondaryColor));
+                                            }}
+                                            className="font-mono text-xs"
+                                            title={secondaryColor}
+                                        />
+                                    </div>
                                     <InputError
                                         message={(errors as any).secondary_color}
                                     />
@@ -462,6 +561,7 @@ export default function SalarySlipTemplateForm({
                                     id="description"
                                     name="description"
                                     defaultValue={template?.description ?? ''}
+                                    placeholder="Internal note for identifying this template (not shown on documents)"
                                     className="min-h-24 w-full rounded-md border border-sidebar-border/70 bg-background px-3 py-2 text-sm"
                                 />
                                 <InputError message={(errors as any).description} />

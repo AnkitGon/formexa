@@ -1,5 +1,6 @@
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
+import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 import Pagination from '@/components/pagination';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Form, Head, Link, usePage } from '@inertiajs/react';
@@ -78,24 +79,14 @@ export default function SalarySlipTemplateIndex() {
                                     </td>
                                     <td className="px-3 py-2">
                                         <div className="flex justify-end gap-2">
-                                            <Button variant="outline" asChild>
+                                            <Button variant="outline" asChild size="sm">
                                                 <Link href={`/template/${t.id}/edit`}>Edit</Link>
                                             </Button>
-                                            <Form
-                                                method="post"
+                                            <ConfirmDeleteButton
                                                 action={`/template/${t.id}`}
-                                                className="inline"
-                                                onSubmit={(e) => {
-                                                    if (!window.confirm('Are you sure you want to delete this item?')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                <input type="hidden" name="_method" value="DELETE" />
-                                                <Button type="submit" variant="destructive">
-                                                    Delete
-                                                </Button>
-                                            </Form>
+                                                itemLabel={`template ${t.name || t.id}`}
+                                                triggerText="Delete"
+                                            />
                                         </div>
                                     </td>
                                 </tr>

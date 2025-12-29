@@ -2,6 +2,7 @@
 import AppLayout from '@/layouts/app-layout';
 import Pagination from '@/components/pagination';
 import { Button } from '@/components/ui/button';
+import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -127,6 +128,7 @@ export default function Index({ clients }: { clients: Paginator<Client> }) {
                                             <Button
                                                 type="button"
                                                 variant="outline"
+                                                size="sm"
                                                 onClick={() => {
                                                     setDialogMode('edit');
                                                     setActiveClientId(Number(client.id));
@@ -143,21 +145,11 @@ export default function Index({ clients }: { clients: Paginator<Client> }) {
                                             >
                                                 Edit
                                             </Button>
-                                            <Form
-                                                method="post"
+                                            <ConfirmDeleteButton
                                                 action={`/clients/${client.id}`}
-                                                className="inline"
-                                                onSubmit={(e) => {
-                                                    if (!window.confirm('Are you sure you want to delete this item?')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                <input type="hidden" name="_method" value="DELETE" />
-                                                <Button type="submit" variant="destructive">
-                                                    Delete
-                                                </Button>
-                                            </Form>
+                                                itemLabel={`client ${client.name}`}
+                                                triggerText="Delete"
+                                            />
                                         </div>
                                     </td>
                                 </tr>
@@ -217,7 +209,7 @@ export default function Index({ clients }: { clients: Paginator<Client> }) {
                         className="space-y-4"
                     >
                         <div className="grid gap-2">
-                            <Label htmlFor="name">Contact Name *</Label>
+                            <Label htmlFor="name">Name *</Label>
                             <Input
                                 id="name"
                                 value={data.name}

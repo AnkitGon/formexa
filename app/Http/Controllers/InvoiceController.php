@@ -12,6 +12,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\UserSetting;
+use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
 {
@@ -70,7 +71,11 @@ class InvoiceController extends Controller
             'client_id' => 'required|exists:clients,id', // Ensure auth user owns client? validation rule might need closure to check ownership
             'invoice_date' => 'required|date',
             'due_date' => 'nullable|date',
-            'invoice_number' => 'required|string', // Should verify uniqueness for user
+            'invoice_number' => [
+                'nullable',
+                'string',
+                Rule::unique('invoices', 'invoice_number')->where(fn ($q) => $q->where('user_id', Auth::id())),
+            ],
             'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
             'items.*.quantity' => 'required|numeric|min:0.01',
@@ -91,7 +96,9 @@ class InvoiceController extends Controller
         DB::transaction(function () use ($validated) {
             $invoice = Auth::user()->invoices()->create([
                 'client_id' => $validated['client_id'],
-                'invoice_number' => $validated['invoice_number'],
+                'invoice_number' => trim($validated['invoice_number'] ?? '') !== ''
+                    ? trim($validated['invoice_number'])
+                    : $this->invoiceService->generateInvoiceNumber(Auth::user()),
                 'invoice_date' => $validated['invoice_date'],
                 'due_date' => $validated['due_date'],
                 'invoice_template_id' => $validated['invoice_template_id'] ?? null,
@@ -126,7 +133,18 @@ class InvoiceController extends Controller
 
         $invoice->load(['client', 'items']);
         $clients = Auth::user()->clients()->orderBy('name')->get();
-        $taxes = Tax::where('user_id', Auth::id())->active()->orderBy('name')->get();
+
+        $selectedTaxIds = $invoice->items->pluck('tax_id')->filter()->unique();
+        $taxes = Tax::where('user_id', Auth::id())
+            ->where(function ($query) use ($selectedTaxIds) {
+                $query->active();
+
+                if ($selectedTaxIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $selectedTaxIds);
+                }
+            })
+            ->orderBy('name')
+            ->get();
         $templates = DocumentTemplate::where('user_id', Auth::id())
             ->where('document_type', 'invoice')
             ->orderBy('name')
@@ -150,7 +168,13 @@ class InvoiceController extends Controller
             'client_id' => 'required|exists:clients,id',
             'invoice_date' => 'required|date',
             'due_date' => 'nullable|date',
-            'invoice_number' => 'required|string',
+            'invoice_number' => [
+                'nullable',
+                'string',
+                Rule::unique('invoices', 'invoice_number')
+                    ->ignore($invoice->id)
+                    ->where(fn ($q) => $q->where('user_id', Auth::id())),
+            ],
             'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
             'items.*.quantity' => 'required|numeric|min:0.01',
@@ -169,10 +193,12 @@ class InvoiceController extends Controller
             return back()->withErrors(['client_id' => 'Invalid client selected.']);
         }
 
-        DB::transaction(function () use ($invoice, $validated) {
+        DB::transaction(function () use ($validated, $invoice) {
             $invoice->update([
                 'client_id' => $validated['client_id'],
-                'invoice_number' => $validated['invoice_number'],
+                'invoice_number' => trim($validated['invoice_number'] ?? '') !== ''
+                    ? trim($validated['invoice_number'])
+                    : ($invoice->invoice_number ?: $this->invoiceService->generateInvoiceNumber(Auth::user())),
                 'invoice_date' => $validated['invoice_date'],
                 'due_date' => $validated['due_date'],
                 'invoice_template_id' => $validated['invoice_template_id'] ?? null,
@@ -212,6 +238,30 @@ class InvoiceController extends Controller
         $user = Auth::user();
         $settings = UserSetting::getMapForUser(Auth::id());
 
+        $template = null;
+        if ($invoice->invoice_template_id) {
+            $template = DocumentTemplate::where('id', $invoice->invoice_template_id)->first();
+        }
+
+        if (! $template) {
+            $template = DocumentTemplate::where('user_id', Auth::id())
+                ->where('document_type', 'invoice')
+                ->orderBy('name')
+                ->first();
+        }
+
+        $templateCode = $template->code ?? 'business';
+        $view = 'app.invoice.pdf_templates.' . $templateCode;
+        if (! view()->exists($view)) {
+            $view = 'app.invoice.pdf_templates.business';
+        }
+
+        $renderedTemplate = view($view, [
+            'invoice' => $invoice,
+            'template' => $template,
+            'business_settings' => $settings,
+        ])->render();
+
         return Inertia::render('Invoices/Show', [
             'invoice' => $invoice,
             'business' => [
@@ -220,6 +270,8 @@ class InvoiceController extends Controller
                 // Add more from settings if available
             ],
             'settingsDefaults' => $settings,
+            'business_settings' => $settings,
+            'renderedTemplate' => $renderedTemplate,
         ]);
     }
 

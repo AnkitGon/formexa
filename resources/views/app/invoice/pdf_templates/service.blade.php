@@ -16,6 +16,14 @@
         $fontSize = $template->font_size ?: 12;
         $lineHeight = $template->line_height ?: 19;
     @endphp
+    @php
+        $currencySymbol = $business_settings['currency_symbol'] ?? '$';
+        $formatMoney = function ($value) use ($currencySymbol) {
+            return $currencySymbol . number_format((float) $value, 2);
+        };
+        $balanceDue = max(0, ($invoice->total ?? 0) - ($invoice->amount_paid ?? 0));
+    @endphp
+
     <style>
         :root {
             --primary: {{ $primary }};
@@ -115,33 +123,51 @@
                 <div class="muted">Freelance / Service Invoice</div>
             </div>
             <div class="text-right">
-                <div class="pill">Due in 7 days</div>
+                @if ($invoice->status)
+                    <div class="pill">{{ ucfirst(str_replace('_', ' ', $invoice->status)) }}</div>
+                @endif
                 <div class="muted" style="margin-top:6px;">Invoice #</div>
-                <div><strong>FR-2024-018</strong></div>
-                <div class="muted">Issued: Mar 2, 2024</div>
+                <div><strong>{{ $invoice->invoice_number }}</strong></div>
+                <div class="muted">Issued: {{ optional($invoice->invoice_date)->format('M d, Y') }}</div>
+                @if ($invoice->due_date)
+                    <div class="muted">Due: {{ optional($invoice->due_date)->format('M d, Y') }}</div>
+                @endif
             </div>
         </div>
 
         <div class="section" style="display:flex; gap:18px;">
             <div style="flex:1;">
                 <h3>From</h3>
-                <div class="desc">Indigo Studio</div>
-                <div class="muted">creative@indigo.studio</div>
-                <div class="muted">Portfolio: indigo.studio/work</div>
+                <div class="desc">{{ $business_settings['company_name'] ?? 'Your Business' }}</div>
+                @if (!empty($business_settings['company_email']))
+                    <div class="muted">{{ $business_settings['company_email'] }}</div>
+                @endif
+                @if (!empty($business_settings['company_address']))
+                    <div class="muted" style="white-space: pre-line;">{{ $business_settings['company_address'] }}</div>
+                @endif
             </div>
             <div style="flex:1;">
                 <h3>Bill To</h3>
-                <div class="desc">Brightside Agency</div>
-                <div class="muted">accounts@brightside.agency</div>
-                <div class="muted">1520 Harbor Street, Seattle, WA</div>
+                @if ($invoice->client)
+                    <div class="desc">{{ $invoice->client->company_name ?? $invoice->client->name }}</div>
+                    @if ($invoice->client->email)
+                        <div class="muted">{{ $invoice->client->email }}</div>
+                    @endif
+                    @if ($invoice->client->address)
+                        <div class="muted" style="white-space: pre-line;">{{ $invoice->client->address }}</div>
+                    @endif
+                @else
+                    <div class="muted">No client selected</div>
+                @endif
             </div>
         </div>
 
-        <div class="section">
-            <h3>Project</h3>
-            <div class="desc">Website refresh & content rollout</div>
-            <div class="muted">Scope: UX polish, CMS content entry, launch support</div>
-        </div>
+        @if ($invoice->notes)
+            <div class="section">
+                <h3>Project</h3>
+                <div class="desc">{{ $invoice->notes }}</div>
+            </div>
+        @endif
 
         <table>
             <thead>
@@ -152,58 +178,49 @@
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>
-                        <div class="desc">UX & UI polish</div>
-                        <div class="small">Design refinements, spacing, hierarchy adjustments</div>
-                    </td>
-                    <td>$90 / hr</td>
-                    <td>$2,160.00</td>
-                </tr>
-                <tr>
-                    <td>
-                        <div class="desc">Content migration</div>
-                        <div class="small">CMS entry for 18 pages, QA pass</div>
-                    </td>
-                    <td>$75 / hr</td>
-                    <td>$1,350.00</td>
-                </tr>
-                <tr>
-                    <td>
-                        <div class="desc">Launch support</div>
-                        <div class="small">DNS cutover, performance checks, UAT fixes</div>
-                    </td>
-                    <td>$90 / hr</td>
-                    <td>$540.00</td>
-                </tr>
-                <tr>
-                    <td colspan="3" class="small" style="text-align:center; padding:12px 8px;">
-                        Service-focused layout—qty hidden, emphasis on deliverables and rate.
-                    </td>
-                </tr>
+                @forelse ($invoice->items as $item)
+                    @php
+                        $lineAmount = $item->amount ?? ($item->quantity * $item->unit_price);
+                    @endphp
+                    <tr>
+                        <td>
+                            <div class="desc">{{ $item->description }}</div>
+                        </td>
+                        <td>{{ $formatMoney($item->unit_price) }}</td>
+                        <td>{{ $formatMoney($lineAmount) }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="3" class="small" style="text-align:center; padding:12px 8px;">
+                            No items added
+                        </td>
+                    </tr>
+                @endforelse
             </tbody>
         </table>
 
         <table class="totals">
             <tr>
                 <td class="label">Subtotal</td>
-                <td class="text-right">$4,050.00</td>
+                <td class="text-right">{{ $formatMoney($invoice->subtotal ?? 0) }}</td>
             </tr>
             <tr>
-                <td class="label">Tax (0%)</td>
-                <td class="text-right">$0.00</td>
+                <td class="label">Tax</td>
+                <td class="text-right">{{ $formatMoney($invoice->tax_total ?? 0) }}</td>
             </tr>
-            <tr>
-                <td class="label">Discount</td>
-                <td class="text-right">- $100.00</td>
-            </tr>
+            @if (($invoice->discount_total ?? 0) > 0)
+                <tr>
+                    <td class="label">Discount</td>
+                    <td class="text-right">- {{ $formatMoney($invoice->discount_total) }}</td>
+                </tr>
+            @endif
             <tr class="total-row">
                 <td class="total">Total</td>
-                <td class="text-right total">$3,950.00</td>
+                <td class="text-right total">{{ $formatMoney($invoice->total ?? 0) }}</td>
             </tr>
             <tr>
                 <td class="label">Due</td>
-                <td class="text-right">$3,950.00</td>
+                <td class="text-right">{{ $formatMoney($balanceDue) }}</td>
             </tr>
         </table>
 

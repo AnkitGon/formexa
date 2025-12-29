@@ -1,5 +1,6 @@
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
+import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, usePage, Form } from '@inertiajs/react';
 import Pagination from '@/components/pagination';
@@ -66,30 +67,20 @@ export default function SalarySlipIndex() {
                                     </td>
                                     <td className="px-3 py-2">
                                         <div className="flex justify-end gap-2">
-                                            <Button variant="outline" asChild>
+                                            <Button variant="outline" asChild size="sm">
                                                 <Link href={`/salary-slip/${slip.id}`}>View</Link>
                                             </Button>
-                                            <Button variant="outline" asChild>
+                                            <Button variant="outline" asChild size="sm">
                                                 <Link href={`/salary-slip/${slip.id}/edit`}>Edit</Link>
                                             </Button>
-                                            <Button variant="outline" asChild>
+                                            <Button variant="outline" asChild size="sm">
                                                 <a href={`/salary-slip/${slip.id}/download`}>Download</a>
                                             </Button>
-                                            <Form
-                                                method="post"
+                                            <ConfirmDeleteButton
                                                 action={`/salary-slip/${slip.id}`}
-                                                className="inline"
-                                                onSubmit={(e) => {
-                                                    if (!window.confirm('Are you sure you want to delete this item?')) {
-                                                        e.preventDefault();
-                                                    }
-                                                }}
-                                            >
-                                                <input type="hidden" name="_method" value="DELETE" />
-                                                <Button type="submit" variant="destructive">
-                                                    Delete
-                                                </Button>
-                                            </Form>
+                                                itemLabel={`salary slip ${slip.code ?? slip.id}`}
+                                                triggerText="Delete"
+                                            />
                                         </div>
                                     </td>
                                 </tr>

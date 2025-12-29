@@ -11,31 +11,37 @@ class InvoiceService
 {
     public function generateInvoiceNumber(User $user): string
     {
-        // Get prefix from settings or default to 'INV-'
-        $prefixSetting = $user->settings()->where('key', 'invoice_prefix')->first();
-        $prefix = $prefixSetting ? $prefixSetting->value : 'INV-';
+        // Get prefix/series from settings or defaults
+        $settings = $user->settings()
+            ->whereIn('key', ['invoice_prefix', 'invoice_series'])
+            ->pluck('value', 'key');
+
+        $prefix = $settings->get('invoice_prefix', 'INV-');
+        $series = $settings->get('invoice_series', now()->format('Y'));
+
+        // Build the search base e.g., INV-2025-
+        $base = $prefix . $series . '-';
 
         // Find the last invoice number for this user
         $lastInvoice = Invoice::where('user_id', $user->id)
-            ->where('invoice_number', 'LIKE', "{$prefix}%")
+            ->where('invoice_number', 'LIKE', "{$base}%")
             ->orderBy('id', 'desc')
             ->first();
 
         if (! $lastInvoice) {
-            return $prefix . '0001';
+            return $base . '0001';
         }
 
         // Extract the number part
-        // Assuming format is PREFIX-NUMBER
-        // If prefix is "INV-", we remove it to get the number
-        $lastNumberStr = Str::after($lastInvoice->invoice_number, $prefix);
+        // Assuming format is PREFIXSERIES-NUMBER (e.g., INV-2025-0001)
+        $lastNumberStr = Str::after($lastInvoice->invoice_number, $base);
 
         // Try to parse it as integer
         $lastNumber = intval($lastNumberStr);
 
         // Increment and pad
         $nextNumber = $lastNumber + 1;
-        return $prefix . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
+        return $base . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
     }
 
     public function calculateTotals(Invoice $invoice)

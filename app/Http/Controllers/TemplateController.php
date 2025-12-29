@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Client;
 use App\Models\DocumentTemplate;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\SalarySlip;
+use App\Models\UserSetting;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -40,16 +44,26 @@ class TemplateController extends Controller
 
         $templates = $query->paginate($perPage)->appends($request->query());
 
-        return Inertia::render('salary-slip-templates/index', [
+        $settings = UserSetting::getMapForUser($request->user()->id);
+
+        return Inertia::render('templates/index', [
             'templates' => $templates,
             'designOptions' => self::DESIGN_OPTIONS['salary_slip'],
+            'branding' => [
+                'invoice_logo_url' => isset($settings['invoice_logo']) ? asset('storage/'.$settings['invoice_logo']) : null,
+            ],
         ]);
     }
 
     public function create()
     {
-        return Inertia::render('salary-slip-templates/create', [
+        $settings = UserSetting::getMapForUser(request()->user()->id);
+
+        return Inertia::render('templates/create', [
             'designOptions' => self::DESIGN_OPTIONS['salary_slip'],
+            'branding' => [
+                'invoice_logo_url' => isset($settings['invoice_logo']) ? asset('storage/'.$settings['invoice_logo']) : null,
+            ],
         ]);
     }
 
@@ -70,6 +84,7 @@ class TemplateController extends Controller
             'font_size' => 'nullable|integer|min:6|max:24',
             'line_height' => 'required|integer|min:10|max:40',
             'is_active' => 'sometimes|boolean',
+            'show_logo' => 'nullable|boolean',
         ]);
 
         // Normalize font family to avoid nulls and preserve user selection
@@ -77,6 +92,7 @@ class TemplateController extends Controller
         $data['font_family'] = $fontFamily === '' ? null : $fontFamily;
 
         $data['is_active'] = $request->boolean('is_active', true);
+        $data['show_logo'] = $request->boolean('show_logo', true);
 
         DocumentTemplate::create($data + ['user_id' => $request->user()->id]);
 
@@ -85,9 +101,14 @@ class TemplateController extends Controller
 
     public function edit(DocumentTemplate $template)
     {
-        return Inertia::render('salary-slip-templates/edit', [
+        $settings = UserSetting::getMapForUser(request()->user()->id);
+
+        return Inertia::render('templates/edit', [
             'template' => $template,
             'designOptions' => self::DESIGN_OPTIONS['salary_slip'],
+            'branding' => [
+                'invoice_logo_url' => isset($settings['invoice_logo']) ? asset('storage/'.$settings['invoice_logo']) : null,
+            ],
         ]);
     }
 
@@ -108,6 +129,7 @@ class TemplateController extends Controller
             'font_size' => 'nullable|integer|min:6|max:24',
             'line_height' => 'nullable|integer|min:10|max:40',
             'is_active' => 'sometimes|boolean',
+            'show_logo' => 'nullable|boolean',
         ]);
 
         // Normalize font family to avoid nulls and preserve user selection
@@ -211,6 +233,57 @@ class TemplateController extends Controller
                 'net_salary' => 9500,
                 'meta' => $previewMeta,
             ]);
+        } else {
+            $sampleInvoice = new Invoice([
+                'invoice_number' => 'INV-0001',
+                'invoice_date' => now(),
+                'due_date' => now()->addDays(7),
+                'status' => 'draft',
+                'subtotal' => 1400,
+                'tax_total' => 140,
+                'discount_total' => 0,
+                'total' => 1540,
+                'amount_paid' => 0,
+                'currency' => 'USD',
+                'notes' => 'Thank you for your business.',
+            ]);
+
+            $sampleClient = new Client([
+                'name' => 'Acme Corp',
+                'company_name' => 'Acme Corp',
+                'email' => 'billing@acme.test',
+                'address' => "742 Evergreen Terrace\nSpringfield",
+            ]);
+
+            $items = collect([
+                new InvoiceItem([
+                    'description' => 'Consulting Services',
+                    'quantity' => 10,
+                    'unit_price' => 100,
+                    'tax_rate' => 10,
+                    'tax_type' => 'percent',
+                    'amount' => 1000,
+                ]),
+                new InvoiceItem([
+                    'description' => 'Implementation Support',
+                    'quantity' => 4,
+                    'unit_price' => 100,
+                    'tax_rate' => 10,
+                    'tax_type' => 'percent',
+                    'amount' => 400,
+                ]),
+            ]);
+
+            $sampleInvoice->setRelation('client', $sampleClient);
+            $sampleInvoice->setRelation('items', $items);
+
+            $payload['invoice'] = $sampleInvoice;
+            $payload['business_settings'] = [
+                'company_name' => 'Your Business',
+                'company_email' => 'hello@business.test',
+                'company_address' => "123 Market Street\nMetropolis",
+                'currency_symbol' => '$',
+            ];
         }
 
         return response()->view($view, $payload);

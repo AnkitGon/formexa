@@ -30,15 +30,11 @@ return new class extends Migration
             // Financials
             $table->decimal('subtotal', 15, 2)->default(0);
             $table->decimal('tax_total', 15, 2)->default(0);
-            $table->decimal('discount_total', 15, 2)->default(0);
-            $table->decimal('total', 15, 2)->default(0);
-            $table->decimal('amount_paid', 15, 2)->default(0);
-            $table->string('currency', 3)->default('USD');
-            
-            // Additional Info
-            $table->text('notes')->nullable();
+            $table->decimal('discount_total', 10, 2)->default(0);
+            $table->decimal('total', 10, 2)->default(0);
+            $table->decimal('amount_paid', 10, 2)->default(0);
+            $table->string('notes', 2000)->nullable();
             $table->text('terms')->nullable();
-            $table->boolean('show_logo')->default(true);
             
             $table->timestamps();
 

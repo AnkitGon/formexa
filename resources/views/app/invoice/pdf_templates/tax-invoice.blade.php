@@ -16,6 +16,14 @@
         $fontSize = $template->font_size ?: 12;
         $lineHeight = $template->line_height ?: 19;
     @endphp
+    @php
+        $currencySymbol = $business_settings['currency_symbol'] ?? '€';
+        $formatMoney = function ($value) use ($currencySymbol) {
+            return $currencySymbol . number_format((float) $value, 2);
+        };
+        $balanceDue = max(0, ($invoice->total ?? 0) - ($invoice->amount_paid ?? 0));
+    @endphp
+
     <style>
         :root {
             --primary: {{ $primary }};
@@ -28,7 +36,7 @@
         body {
             font-family: {{ $fontFamily }} !important;
             margin: 0;
-            padding: 32px;
+            padding: 32px; /* restore padding; iframe isolates styles */
             color: var(--body);
             font-size: {{ $fontSize }}px;
             line-height: {{ $lineHeight }}px;
@@ -108,25 +116,41 @@
                 <div class="muted">Compliant layout for VAT / GST</div>
             </div>
             <div style="text-align:right;">
-                <div class="pill">Due in 14 days</div>
-                <div class="muted" style="margin-top:6px;">Invoice #: TX-2024-119</div>
-                <div class="muted">Date: Apr 12, 2024</div>
-                <div class="muted">Place of Supply: Berlin, DE</div>
+                @if ($invoice->status)
+                    <div class="pill">{{ ucfirst(str_replace('_', ' ', $invoice->status)) }}</div>
+                @endif
+                <div class="muted" style="margin-top:6px;">Invoice #: {{ $invoice->invoice_number }}</div>
+                <div class="muted">Date: {{ optional($invoice->invoice_date)->format('M d, Y') }}</div>
+                @if ($invoice->due_date)
+                    <div class="muted">Due: {{ optional($invoice->due_date)->format('M d, Y') }}</div>
+                @endif
             </div>
         </div>
 
         <div class="section" style="display:flex; gap:18px;">
             <div style="flex:1;">
                 <h3>Supplier</h3>
-                <div class="desc">Nordwind Trading GmbH</div>
-                <div class="muted">VAT ID: DE123456789</div>
-                <div class="muted">Am Alexanderplatz 1, 10178 Berlin</div>
+                <div class="desc">{{ $business_settings['company_name'] ?? 'Your Business' }}</div>
+                @if (!empty($business_settings['company_address']))
+                    <div class="muted" style="white-space: pre-line;">{{ $business_settings['company_address'] }}</div>
+                @endif
+                @if (!empty($business_settings['company_email']))
+                    <div class="muted">{{ $business_settings['company_email'] }}</div>
+                @endif
             </div>
             <div style="flex:1;">
                 <h3>Customer</h3>
-                <div class="desc">Willow Wholesale Ltd</div>
-                <div class="muted">VAT ID: GB987654321</div>
-                <div class="muted">42 Market Lane, London</div>
+                @if ($invoice->client)
+                    <div class="desc">{{ $invoice->client->company_name ?? $invoice->client->name }}</div>
+                    @if ($invoice->client->address)
+                        <div class="muted" style="white-space: pre-line;">{{ $invoice->client->address }}</div>
+                    @endif
+                    @if ($invoice->client->email)
+                        <div class="muted">{{ $invoice->client->email }}</div>
+                    @endif
+                @else
+                    <div class="muted">No client selected</div>
+                @endif
             </div>
         </div>
 
@@ -141,26 +165,32 @@
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>
-                        <div class="desc">Bulk coffee beans</div>
-                        <div class="small">Roasted, 1kg packs</div>
-                    </td>
-                    <td>120</td>
-                    <td>kg</td>
-                    <td>€18.00</td>
-                    <td>VAT 7%</td>
-                </tr>
-                <tr>
-                    <td>
-                        <div class="desc">Packaging service</div>
-                        <div class="small">Custom labeling, pallet wrap</div>
-                    </td>
-                    <td>1</td>
-                    <td>lot</td>
-                    <td>€320.00</td>
-                    <td>VAT 19%</td>
-                </tr>
+                @forelse ($invoice->items as $item)
+                    @php
+                        $lineAmount = $item->amount ?? ($item->quantity * $item->unit_price);
+                        $taxLabel = '—';
+                        if (($item->tax_rate ?? 0) > 0) {
+                            $taxLabel = ($item->tax_type ?? 'percent') === 'fixed'
+                                ? $formatMoney($item->tax_rate)
+                                : number_format($item->tax_rate, 2) . '%';
+                        }
+                    @endphp
+                    <tr>
+                        <td>
+                            <div class="desc">{{ $item->description }}</div>
+                        </td>
+                        <td>{{ $item->quantity }}</td>
+                        <td>{{ $item->unit ?? 'unit' }}</td>
+                        <td>{{ $formatMoney($lineAmount) }}</td>
+                        <td>{{ $taxLabel }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="small" style="text-align:center; padding:10px 8px;">
+                            No items added
+                        </td>
+                    </tr>
+                @endforelse
             </tbody>
         </table>
 
@@ -175,23 +205,39 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>VAT 7%</td>
-                        <td>7%</td>
-                        <td>€2,160.00</td>
-                        <td>€151.20</td>
-                    </tr>
-                    <tr>
-                        <td>VAT 19%</td>
-                        <td>19%</td>
-                        <td>€320.00</td>
-                        <td>€60.80</td>
-                    </tr>
-                    <tr>
-                        <td colspan="4" class="small" style="text-align:center; padding:10px 8px;">
-                            Tax tables are separated for clarity and compliance.
-                        </td>
-                    </tr>
+                    @php
+                        $taxGroups = [];
+                        foreach ($invoice->items as $item) {
+                            $amount = $item->amount ?? ($item->quantity * $item->unit_price);
+                            $rate = (float) ($item->tax_rate ?? 0);
+                            $type = $item->tax_type ?? 'percent';
+                            if ($rate <= 0) {
+                                continue;
+                            }
+                            $key = $type . ':' . $rate;
+                            if (! isset($taxGroups[$key])) {
+                                $taxGroups[$key] = ['base' => 0, 'tax' => 0, 'label' => $type === 'fixed' ? $formatMoney($rate) : $rate . '%'];
+                            }
+                            $taxBase = $type === 'fixed' ? 0 : $amount;
+                            $taxAmount = $type === 'fixed' ? $rate * $item->quantity : $amount * ($rate / 100);
+                            $taxGroups[$key]['base'] += $taxBase;
+                            $taxGroups[$key]['tax'] += $taxAmount;
+                        }
+                    @endphp
+                    @forelse ($taxGroups as $group)
+                        <tr>
+                            <td>Tax</td>
+                            <td>{{ $group['label'] }}</td>
+                            <td>{{ $formatMoney($group['base']) }}</td>
+                            <td>{{ $formatMoney($group['tax']) }}</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" class="small" style="text-align:center; padding:10px 8px;">
+                                No taxes applied
+                            </td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
@@ -199,20 +245,40 @@
         <table class="totals">
             <tr>
                 <td class="label">Net Total</td>
-                <td class="text-right">€2,480.00</td>
+                <td class="text-right">{{ $formatMoney($invoice->subtotal ?? 0) }}</td>
             </tr>
             <tr>
                 <td class="label">VAT Total</td>
-                <td class="text-right">€212.00</td>
+                <td class="text-right">{{ $formatMoney($invoice->tax_total ?? 0) }}</td>
             </tr>
+            @if (($invoice->discount_total ?? 0) > 0)
+                <tr>
+                    <td class="label">Discounts</td>
+                    <td class="text-right">- {{ $formatMoney($invoice->discount_total) }}</td>
+                </tr>
+            @endif
             <tr class="total-row">
                 <td class="total">Invoice Total</td>
-                <td class="text-right total">€2,692.00</td>
+                <td class="text-right total">{{ $formatMoney($invoice->total ?? 0) }}</td>
+            </tr>
+            @if (($invoice->amount_paid ?? 0) > 0)
+                <tr>
+                    <td class="label">Paid</td>
+                    <td class="text-right">- {{ $formatMoney($invoice->amount_paid) }}</td>
+                </tr>
+            @endif
+            <tr class="total-row">
+                <td class="total">Balance Due</td>
+                <td class="text-right total">{{ $formatMoney($balanceDue) }}</td>
             </tr>
         </table>
 
         <div class="note">
-            Reverse charge not applicable. Please include VAT IDs on remittance. Bank: IBAN DE00 1234 1234 1234 1234 12 / BIC NWBGDE77.
+            @if ($invoice->notes)
+                {{ $invoice->notes }}
+            @else
+                Reverse charge not applicable. Please include VAT IDs on remittance.
+            @endif
         </div>
     </div>
 </body>
