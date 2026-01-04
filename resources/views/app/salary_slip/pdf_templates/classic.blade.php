@@ -76,6 +76,39 @@
         }
     };
 
+    $shouldFormatAsDate = function ($value): bool {
+        if (! is_string($value)) {
+            return false;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/', $value)) {
+            return true;
+        }
+
+        if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $value)) {
+            return true;
+        }
+
+        if (preg_match('/^\d{4}\/\d{1,2}\/\d{1,2}$/', $value)) {
+            return true;
+        }
+
+        return false;
+    };
+
+    $shouldIncludeTime = function ($value): bool {
+        if (! is_string($value)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\d{1,2}:\d{2}/', $value);
+    };
+
     $formatCurrency = function ($value) use ($defaultCurrency, $currencySymbolPosition) {
         $amount = (float) ($value ?? 0);
         $base = number_format($amount, 2);
@@ -102,7 +135,7 @@
         $payslipRows[] = [
             'label' => $label,
             'value' => $value,
-            'display' => $formatValue($value, true),
+            'display' => $shouldFormatAsDate($value) ? $formatValue($value, $shouldIncludeTime($value)) : $value,
         ];
     }
 
@@ -112,10 +145,12 @@
             continue;
         }
 
+        $value = $item['value'] ?? '';
+
         $payslipRows[] = [
             'label' => $label,
-            'value' => $item['value'] ?? '',
-            'display' => $formatValue($item['value'] ?? '', true),
+            'value' => $value,
+            'display' => $shouldFormatAsDate($value) ? $formatValue($value, $shouldIncludeTime($value)) : $value,
         ];
     }
 
@@ -134,7 +169,7 @@
         $employeeRows[] = [
             'label' => $label,
             'value' => $value,
-            'display' => $formatValue($value, true),
+            'display' => $shouldFormatAsDate($value) ? $formatValue($value, $shouldIncludeTime($value)) : $value,
         ];
     }
 
@@ -144,10 +179,12 @@
             continue;
         }
 
+        $value = $item['value'] ?? '';
+
         $employeeRows[] = [
             'label' => $label,
-            'value' => $item['value'] ?? '',
-            'display' => $formatValue($item['value'] ?? '', true),
+            'value' => $value,
+            'display' => $shouldFormatAsDate($value) ? $formatValue($value, $shouldIncludeTime($value)) : $value,
         ];
     }
 

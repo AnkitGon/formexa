@@ -885,7 +885,7 @@ class SalarySlipController extends Controller
         return redirect()->route('salary-slip.index');
     }
 
-    public function showPdf(SalarySlip $salarySlip)
+    public function showPdf(Request $request, SalarySlip $salarySlip)
     {
         $this->requireSalarySlipOwner($salarySlip);
 
@@ -909,13 +909,13 @@ class SalarySlipController extends Controller
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($view, [
             'salarySlip' => $salarySlip,
             'template' => $salarySlip->template,
-            'settingsDefaults' => $this->resolveSettingsDefaults($salarySlip->user),
+            'settingsDefaults' => $this->resolveSettingsDefaults($request->user()),
         ]);
 
         return $pdf->stream('salary-slip-' . $salarySlip->id . '.pdf');
     }
 
-    public function downloadPdf(SalarySlip $salarySlip)
+    public function downloadPdf(Request $request, SalarySlip $salarySlip)
     {
         $this->requireSalarySlipOwner($salarySlip);
 
@@ -939,7 +939,7 @@ class SalarySlipController extends Controller
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView($view, [
             'salarySlip' => $salarySlip,
             'template' => $salarySlip->template,
-            'settingsDefaults' => $this->resolveSettingsDefaults($salarySlip->user),
+            'settingsDefaults' => $this->resolveSettingsDefaults($request->user()),
         ]);
 
         return $pdf->download('salary-slip-' . $salarySlip->id . '.pdf');
