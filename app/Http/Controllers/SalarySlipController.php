@@ -597,6 +597,7 @@ class SalarySlipController extends Controller
 
         return Inertia::render('salary-slip/index', [
             'salarySlips' => $salarySlips,
+            'settingsDefaults' => $this->resolveSettingsDefaults($request->user()),
         ]);
     }
 

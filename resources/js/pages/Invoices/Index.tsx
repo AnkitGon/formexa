@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Pagination from '@/components/pagination';
 import AppLayout from '@/layouts/app-layout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { Plus, Eye, Pencil, FileText } from 'lucide-react';
 import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 
@@ -21,6 +21,10 @@ interface Invoice {
     status: 'draft' | 'sent' | 'paid' | 'partially_paid' | 'overdue' | 'cancelled';
     total: number;
     client: Client | null;
+}
+
+interface Settings {
+    date_format?: string | null;
 }
 
 interface Paginator<T> {
@@ -46,6 +50,21 @@ const statusColors: Record<string, "default" | "secondary" | "destructive" | "ou
 };
 
 export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
+    const { settings } = usePage<{ settings?: Settings }>().props;
+    const dateFormat = (settings?.date_format as string | null) ?? 'YYYY-MM-DD';
+
+    const formatDate = (value?: string | null) => {
+        if (!value) return '';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return value;
+        const tokens: Record<string, string> = {
+            YYYY: String(d.getFullYear()),
+            MM: String(d.getMonth() + 1).padStart(2, '0'),
+            DD: String(d.getDate()).padStart(2, '0'),
+        };
+        return dateFormat.replace(/YYYY|MM|DD/g, (t) => tokens[t] ?? t);
+    };
+
     const items = invoices?.data ?? [];
 
     return (
@@ -74,6 +93,7 @@ export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
                                     <th className="px-4 py-3">Invoice</th>
                                     <th className="px-4 py-3">Client</th>
                                     <th className="px-4 py-3">Dates</th>
+                                    <th className="px-4 py-3">Status</th>
                                     <th className="px-4 py-3 text-right">Total</th>
                                     <th className="px-4 py-3 text-right">Actions</th>
                                 </tr>
@@ -81,7 +101,7 @@ export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
                         <tbody>
                                 {items.length === 0 && (
                                     <tr className="border-b border-sidebar-border/50 last:border-b-0">
-                                        <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                                        <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                                             <div className="flex flex-col items-center gap-2">
                                                 <div>No data found.</div>
                                             </div>
@@ -94,17 +114,19 @@ export default function Index({ invoices }: { invoices: Paginator<Invoice> }) {
                                         <td className="px-3 py-2">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-semibold">{invoice.invoice_number}</span>
-                                                <Badge variant={statusColors[invoice.status] || 'default'}>
-                                                    {invoice.status.replace('_', ' ')}
-                                                </Badge>
                                             </div>
                                         </td>
                                         <td className="px-3 py-2 text-muted-foreground">
                                             {invoice.client?.company_name || invoice.client?.name || 'Unknown Client'}
                                         </td>
                                         <td className="px-3 py-2 text-muted-foreground text-sm">
-                                            Issued: {invoice.invoice_date}{' '}
-                                            {invoice.due_date && `• Due: ${invoice.due_date}`}
+                                            Issued: {formatDate(invoice.invoice_date)}
+                                            {invoice.due_date && ` • Due: ${formatDate(invoice.due_date)}`}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <Badge variant={statusColors[invoice.status] || 'default'}>
+                                                {invoice.status.replace('_', ' ')}
+                                            </Badge>
                                         </td>
                                         <td className="px-3 py-2 text-right font-semibold">
                                             ${Number(invoice.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}

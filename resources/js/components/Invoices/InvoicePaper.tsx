@@ -10,6 +10,10 @@ export interface InvoiceData {
     status: string;
     notes?: string | null;
     terms?: string | null;
+    discount_mode?: 'none' | 'item' | 'invoice';
+    discount_total?: number;
+    discount_value?: number; // invoice level value
+    discount_type?: 'fixed' | 'percent';
     subtotal: number;
     tax_total: number;
     total: number;
@@ -29,6 +33,9 @@ export interface InvoiceData {
         tax_rate?: number | string;
         tax_type?: 'percent' | 'fixed' | string | null;
         tax_id?: number | string | null;
+        discount_value?: number | string;
+        discount_type?: 'fixed' | 'percent';
+        discount_amount?: number; // calculated amount
     }>;
     // Branding snapshots
     currency_symbol?: string;
@@ -150,28 +157,58 @@ export default function InvoicePaper({ data, business, className }: InvoicePaper
                 <thead>
                     <tr style={{ backgroundColor: isMinimal ? 'transparent' : '#f9fafb' }}>
                         <th className="py-3 px-4 text-left font-bold text-gray-600 border-b">Description</th>
-                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-20">Qty</th>
-                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-28">Price</th>
-                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-28">Tax</th>
-                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-32">Amount</th>
+                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-16">Qty</th>
+                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-24">Price</th>
+                        {data.discount_mode === 'item' && (
+                            <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-24">Discount</th>
+                        )}
+                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-24">Tax</th>
+                        <th className="py-3 px-4 text-right font-bold text-gray-600 border-b w-28">Amount</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {data.items.map((item, index) => (
-                        <tr key={index} className="border-b border-gray-100 last:border-0">
-                            <td className="py-3 px-4 text-gray-800">{item.description || <span className="text-gray-300 italic">Item description</span>}</td>
-                            <td className="py-3 px-4 text-right text-gray-600">{item.quantity}</td>
-                            <td className="py-3 px-4 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
-                            <td className="py-3 px-4 text-right text-gray-600">
-                                {item.tax_rate
-                                    ? `${item.tax_type === 'fixed' ? formatCurrency(item.tax_rate) : `${item.tax_rate}%`}`
-                                    : '—'}
-                            </td>
-                            <td className="py-3 px-4 text-right font-medium text-gray-900">
-                                {formatCurrency(Number(item.quantity) * Number(item.unit_price))}
-                            </td>
-                        </tr>
-                    ))}
+                    {data.items.map((item, index) => {
+                        const qty = Number(item.quantity) || 0;
+                        const price = Number(item.unit_price) || 0;
+                        const baseAmount = qty * price;
+
+                        let itemDiscount = 0;
+                        // If explicit amount is provided (from backend) use it, otherwise calc
+                        if (item.discount_amount !== undefined) {
+                            itemDiscount = Number(item.discount_amount);
+                        } else if (data.discount_mode === 'item') {
+                            const dVal = Number(item.discount_value) || 0;
+                            if (item.discount_type === 'percent') {
+                                itemDiscount = baseAmount * (dVal / 100);
+                            } else {
+                                itemDiscount = dVal;
+                            }
+                            if (itemDiscount > baseAmount) itemDiscount = baseAmount;
+                        }
+
+                        const taxable = baseAmount - itemDiscount;
+
+                        return (
+                            <tr key={index} className="border-b border-gray-100 last:border-0">
+                                <td className="py-3 px-4 text-gray-800">{item.description || <span className="text-gray-300 italic">Item description</span>}</td>
+                                <td className="py-3 px-4 text-right text-gray-600">{qty}</td>
+                                <td className="py-3 px-4 text-right text-gray-600">{formatCurrency(price)}</td>
+                                {data.discount_mode === 'item' && (
+                                    <td className="py-3 px-4 text-right text-rose-600">
+                                        {itemDiscount > 0 ? `-${formatCurrency(itemDiscount)}` : '—'}
+                                    </td>
+                                )}
+                                <td className="py-3 px-4 text-right text-gray-600">
+                                    {item.tax_rate
+                                        ? `${item.tax_type === 'fixed' ? formatCurrency(item.tax_rate) : `${item.tax_rate}%`}`
+                                        : '—'}
+                                </td>
+                                <td className="py-3 px-4 text-right font-medium text-gray-900">
+                                    {formatCurrency(taxable)} {/* Usually amount column is taxable amount or total? Let's assume taxable amount (subtotal - discount) */}
+                                </td>
+                            </tr>
+                        );
+                    })}
                     {data.items.length === 0 && (
                         <tr>
                             <td colSpan={4} className="py-8 text-center text-gray-400 italic">No items added</td>
@@ -187,6 +224,12 @@ export default function InvoicePaper({ data, business, className }: InvoicePaper
                         <span>Subtotal</span>
                         <span>{formatCurrency(data.subtotal)}</span>
                     </div>
+                    {data.discount_total !== undefined && data.discount_total > 0 && (
+                        <div className="flex justify-between text-rose-600">
+                            <span>Discount</span>
+                            <span>-{formatCurrency(data.discount_total)}</span>
+                        </div>
+                    )}
                     {(data.tax_total > 0) && (
                         <div className="flex justify-between text-gray-600">
                             <span>Tax</span>

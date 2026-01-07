@@ -58,6 +58,11 @@ interface InvoiceProps {
     today?: string;
     taxes?: Tax[];
     templates?: Template[];
+    business_settings?: {
+        default_currency?: string | null;
+        currency_symbol_position?: string | null;
+        invoice_discount_mode?: 'none' | 'item' | 'invoice' | null;
+    };
 }
 
 interface InvoiceFormData {
@@ -68,7 +73,10 @@ interface InvoiceFormData {
     status: string;
     notes: string;
     invoice_template_id?: string | number | null;
-    items: any[];
+    discount_mode: 'none' | 'item' | 'invoice';
+    discount_type: 'fixed' | 'percent';
+    discount_value: number;
+    items: any[]; // We will refine items type in normalizeItems or similar
 }
 
 const toDateInput = (value?: string) => {
@@ -78,12 +86,25 @@ const toDateInput = (value?: string) => {
     return d.toISOString().slice(0, 10);
 };
 
-export default function Create({ invoice, clients, nextNumber, today, taxes = [], templates = [] }: InvoiceProps) {
+type InvoiceFormState = InvoiceFormData & {
+    currency: string;
+    currency_symbol_position: 'prefix' | 'suffix';
+};
+
+export default function Create({
+    invoice,
+    clients,
+    nextNumber,
+    today,
+    taxes = [],
+    templates = [],
+    business_settings,
+}: InvoiceProps) {
     const isEditing = !!invoice;
     const autoInvoiceNumber = invoice?.invoice_number || nextNumber || '';
 
     const normalizeItems = (items: any[] | undefined) => {
-        const incoming = items && items.length ? items : [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null }];
+        const incoming = items && items.length ? items : [{ description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null, discount_type: 'fixed', discount_value: 0 }];
         return incoming.map((it: any) => {
             const taxType = it.tax_type === 'fixed' ? 'fixed' : 'percent';
             const taxRate = it.tax_rate ?? 0;
@@ -104,11 +125,27 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                 tax_type: taxType,
                 tax_id: taxId,
                 tax_rate: taxRate,
+                discount_type: it.discount_type || 'fixed',
+                discount_value: Number(it.discount_value || 0),
             };
         }) as any[];
     };
 
-    const { data, setData, post, put, processing, errors, clearErrors, setError } = useForm<InvoiceFormData>({
+    const currencyOptions = useMemo(
+        () => [
+            { value: 'USD', label: 'USD – US Dollar', symbol: '$' },
+            { value: 'EUR', label: 'EUR – Euro', symbol: '€' },
+            { value: 'GBP', label: 'GBP – British Pound', symbol: '£' },
+            { value: 'INR', label: 'INR – Indian Rupee', symbol: '₹' },
+        ],
+        [],
+    );
+
+    const defaultCurrencyFromSettings = invoice?.currency || business_settings?.default_currency || 'USD';
+    const defaultSymbolPosition =
+        (business_settings?.currency_symbol_position as string | null) === 'suffix' ? 'suffix' : 'prefix';
+
+    const { data, setData, post, put, processing, errors, clearErrors, setError } = useForm<InvoiceFormState>({
         client_id: invoice?.client_id || '',
         invoice_number: invoice?.invoice_number || nextNumber || '',
         invoice_date: toDateInput(invoice?.invoice_date || today || ''),
@@ -117,6 +154,11 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
         notes: invoice?.notes || '',
         invoice_template_id: invoice?.invoice_template_id || null,
         items: normalizeItems(invoice?.items),
+        currency: defaultCurrencyFromSettings,
+        currency_symbol_position: defaultSymbolPosition,
+        discount_mode: (invoice?.discount_mode as any) || (business_settings?.invoice_discount_mode as any) || 'none',
+        discount_type: (invoice?.discount_type as any) || 'fixed',
+        discount_value: Number(invoice?.discount_value || 0),
     });
 
     const [totals, setTotals] = useState({ subtotal: 0, tax: 0, total: 0 });
@@ -202,27 +244,75 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
     // ...
     useEffect(() => {
         let sub = 0;
-        let tax = 0;
+        let totalTax = 0;
+        let totalDiscount = 0;
 
+        // 1. Calculate Subtotal first (needed for invoice level discount)
+        data.items.forEach(item => {
+            const qty = Number(item.quantity) || 0;
+            const price = Number(item.unit_price) || 0;
+            sub += qty * price;
+        });
+
+        // 2. Calculate Invoice Level Discount
+        let invoiceDiscountAmount = 0;
+        if (data.discount_mode === 'invoice') {
+            const dVal = Number(data.discount_value) || 0;
+            if (data.discount_type === 'percent') {
+                invoiceDiscountAmount = sub * (dVal / 100);
+            } else {
+                invoiceDiscountAmount = dVal;
+            }
+            if (invoiceDiscountAmount > sub) invoiceDiscountAmount = sub;
+            totalDiscount = invoiceDiscountAmount;
+        }
+
+        // 3. Calculate Item taxes and Item discounts
         data.items.forEach(item => {
             const qty = Number(item.quantity) || 0;
             const price = Number(item.unit_price) || 0;
             const rate = Number(item.tax_rate) || 0;
             const taxType = item.tax_type === 'fixed' ? 'fixed' : 'percent';
 
-            const amount = qty * price;
-            const itemTax = taxType === 'percent' ? amount * (rate / 100) : qty * rate;
+            const baseAmount = qty * price;
+            let itemDiscount = 0;
 
-            sub += amount;
-            tax += itemTax;
+            if (data.discount_mode === 'item') {
+                const dVal = Number(item.discount_value) || 0;
+                const dType = item.discount_type === 'percent' ? 'percent' : 'fixed';
+                if (dType === 'percent') {
+                    itemDiscount = baseAmount * (dVal / 100);
+                } else {
+                    itemDiscount = dVal;
+                }
+                if (itemDiscount > baseAmount) itemDiscount = baseAmount;
+                totalDiscount += itemDiscount;
+            } else if (data.discount_mode === 'invoice') {
+                // Prorate for tax basis if needed
+                if (sub > 0) {
+                    itemDiscount = (baseAmount / sub) * invoiceDiscountAmount;
+                }
+            }
+
+            const taxableAmount = baseAmount - itemDiscount;
+
+            let itemTax = 0;
+            if (taxType === 'percent') {
+                itemTax = taxableAmount * (rate / 100);
+            } else {
+                // Fixed tax per unit 
+                itemTax = qty * rate;
+            }
+
+            totalTax += itemTax;
         });
 
         setTotals({
             subtotal: sub,
-            tax: tax,
-            total: sub + tax
+            tax: totalTax,
+            total: sub - totalDiscount + totalTax
         });
-    }, [data.items]);
+    }, [data.items, data.discount_mode, data.discount_type, data.discount_value]);
 
     // Update selected client when client_id changes
     useEffect(() => {
@@ -268,7 +358,7 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
     const addItem = () => {
         setData('items', [
             ...data.items,
-            { description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null }
+            { description: '', quantity: 1, unit_price: 0, tax_rate: 0, tax_type: 'percent', tax_id: null, discount_type: 'fixed', discount_value: 0 }
         ]);
     };
 
@@ -318,6 +408,14 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
             setData('due_date', nextDue);
         }
     }, [data.invoice_date, paymentTerms, setData]);
+
+    const formatMoney = (amount: number) => {
+        const symbol = currencyOptions.find((c) => c.value === data.currency)?.symbol ?? '$';
+        const fixed = amount.toFixed(2);
+        return data.currency_symbol_position === 'suffix'
+            ? `${fixed}${symbol}`
+            : `${symbol}${fixed}`;
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
@@ -703,6 +801,10 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
 
                             <Separator />
 
+
+
+                            <Separator />
+
                             {/* Section: Items */}
                             <div className="grid gap-4">
                                 <div className="flex flex-col gap-1">
@@ -726,15 +828,35 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                         const price = Number(item.unit_price) || 0;
                                         const rate = Number(item.tax_rate || 0);
                                         const taxType = item.tax_type === 'fixed' ? 'fixed' : 'percent';
-                                        const amount = qty * price;
-                                        const itemTax = taxType === 'percent' ? amount * (rate / 100) : qty * rate;
-                                        const totalWithTax = amount + itemTax;
+
+                                        const baseAmount = qty * price;
+                                        let itemDiscount = 0;
+                                        if (data.discount_mode === 'item') {
+                                            const dVal = Number(item.discount_value) || 0;
+                                            const dType = item.discount_type === 'percent' ? 'percent' : 'fixed';
+                                            if (dType === 'percent') {
+                                                itemDiscount = baseAmount * (dVal / 100);
+                                            } else {
+                                                itemDiscount = dVal;
+                                            }
+                                            if (itemDiscount > baseAmount) itemDiscount = baseAmount;
+                                        } else if (data.discount_mode === 'invoice') {
+                                            // We just show pro-rated or nothing? The req says "Item-level discounts must be disabled in this mode".
+                                            // So we don't show inputs.
+                                        }
+
+                                        const taxableAmount = baseAmount - itemDiscount;
+                                        const itemTax = taxType === 'percent' ? taxableAmount * (rate / 100) : qty * rate;
+                                        const totalWithTax = baseAmount - itemDiscount + itemTax; // Line total usually includes tax
+
+                                        const showItemDiscount = data.discount_mode === 'item';
+
                                         return (
                                             <div
                                                 key={index}
                                                 className="group relative grid grid-cols-12 gap-3 items-center p-3 rounded-lg border bg-card/60 hover:bg-card hover:shadow-sm transition-all"
                                             >
-                                                <div className="col-span-12 md:col-span-4 min-w-0">
+                                                <div className={`col-span-12 ${showItemDiscount ? 'md:col-span-3' : 'md:col-span-4'} min-w-0`}>
                                                     <Label className="text-xs text-muted-foreground">Description</Label>
                                                     <Input
                                                         value={item.description}
@@ -746,7 +868,7 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                         <p className="text-xs text-red-500">{getItemError(index, 'description')}</p>
                                                     )}
                                                 </div>
-                                                <div className="col-span-6 md:col-span-2">
+                                                <div className={`col-span-6 ${showItemDiscount ? 'md:col-span-1' : 'md:col-span-2'}`}>
                                                     <Label className="text-xs text-muted-foreground">Qty</Label>
                                                     <Input
                                                         type="number"
@@ -772,6 +894,34 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                                         <p className="text-xs text-red-500">{getItemError(index, 'unit_price')}</p>
                                                     )}
                                                 </div>
+
+                                                {showItemDiscount && (
+                                                    <div className="col-span-6 md:col-span-2">
+                                                        <Label className="text-xs text-muted-foreground">Discount</Label>
+                                                        <div className="flex gap-1">
+                                                            <Input
+                                                                type="number"
+                                                                value={item.discount_value}
+                                                                onChange={(e) => updateItem(index, 'discount_value', e.target.value)}
+                                                                className="h-10 text-right w-full"
+                                                                placeholder="0"
+                                                            />
+                                                            <Select
+                                                                value={item.discount_type || 'fixed'}
+                                                                onValueChange={(val) => updateItem(index, 'discount_type', val)}
+                                                            >
+                                                                <SelectTrigger className="h-10 w-[70px] px-1 text-xs">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="fixed">Fixed</SelectItem>
+                                                                    <SelectItem value="percent">%</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    </div>
+                                                )}
+
                                                 <div className="col-span-6 md:col-span-2">
                                                     <Label className="text-xs text-muted-foreground">Tax</Label>
                                                     <Select
@@ -833,10 +983,62 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                                         );
                                     })}
                                 </div>
-                                <div className="flex justify-end gap-8 px-4 text-sm font-medium">
-                                    <div className="text-muted-foreground">Subtotal: <span className="text-foreground ml-2">{totals.subtotal.toFixed(2)}</span></div>
-                                    <div className="text-muted-foreground">Tax: <span className="text-foreground ml-2">{totals.tax.toFixed(2)}</span></div>
-                                    <div className="text-lg font-bold">Total: <span className="text-primary ml-2">{totals.total.toFixed(2)}</span></div>
+                            </div>
+                            <div className="flex flex-col gap-2 md:justify-end md:items-end px-4 text-sm font-medium min-w-[300px] ml-auto">
+                                <div className="flex justify-between items-center w-full md:w-64">
+                                    <span className="text-muted-foreground">Subtotal:</span>
+                                    <span className="text-foreground ml-2">{formatMoney(totals.subtotal)}</span>
+                                </div>
+
+                                {/* Invoice Level Discount */}
+                                {(data.discount_mode === 'invoice' || totals.subtotal > totals.total + totals.tax) && (
+                                    <div className="flex justify-between items-center w-full md:w-64 text-rose-600">
+                                        <div className="flex items-center gap-2">
+                                            <span>Discount</span>
+                                            {data.discount_mode === 'invoice' && (
+                                                <div className="flex items-center gap-1">
+                                                    <Input
+                                                        type="number"
+                                                        value={data.discount_value}
+                                                        onChange={(e) => setData('discount_value', Number(e.target.value))}
+                                                        className="h-7 w-20 text-right text-xs"
+                                                        placeholder="0"
+                                                    />
+                                                    <Select
+                                                        value={data.discount_type}
+                                                        onValueChange={(val: 'fixed' | 'percent') => setData('discount_type', val)}
+                                                    >
+                                                        <SelectTrigger className="h-7 w-[50px] px-1 text-xs">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="fixed">$</SelectItem>
+                                                            <SelectItem value="percent">%</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <span className="ml-2">
+                                            - {formatMoney(Number(totals.subtotal) - (Number(totals.total) - Number(totals.tax)))}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {data.discount_mode === 'item' && (Number(totals.subtotal) > (Number(totals.total) - Number(totals.tax))) && (
+                                    <div className="flex justify-between items-center w-full md:w-64 text-rose-600">
+                                        <span className="text-muted-foreground text-rose-600">Total Discount:</span>
+                                        <span className="ml-2">- {formatMoney(Number(totals.subtotal) - (Number(totals.total) - Number(totals.tax)))}</span>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between items-center w-full md:w-64">
+                                    <span className="text-muted-foreground">Tax:</span>
+                                    <span className="text-foreground ml-2">{formatMoney(totals.tax)}</span>
+                                </div>
+                                <div className="flex justify-between items-center w-full md:w-64 text-lg font-bold border-t pt-2 mt-1 border-dashed">
+                                    <span>Total:</span>
+                                    <span className="text-primary ml-2">{formatMoney(totals.total)}</span>
                                 </div>
                             </div>
 
@@ -867,8 +1069,7 @@ export default function Create({ invoice, clients, nextNumber, today, taxes = []
                         </form>
                     </div>
                 </div>
-
-            </div >
+            </div>
         </AppLayout >
     );
 }

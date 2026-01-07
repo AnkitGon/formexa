@@ -164,32 +164,11 @@ export default function Show({ invoice, business, business_settings, renderedTem
                         </Link>
                     </Button>
                     <div className="flex gap-2">
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline">
-                                    <MoreHorizontal className="mr-2 h-4 w-4" /> Actions
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Manage Invoice</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={handleDuplicate}>
-                                    <Copy className="mr-2 h-4 w-4" /> Duplicate
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={handleSend}>
-                                    <Mail className="mr-2 h-4 w-4" /> Email Client
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild>
-                                    <a href={`/invoices/${invoice.id}/print`} target="_blank" rel="noopener noreferrer">
-                                        <Printer className="mr-2 h-4 w-4" /> Print / PDF
-                                    </a>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                   
 
                         <Button variant="outline" asChild>
                             <Link href={`/invoices/${invoice.id}/edit`}>
-                                <Pencil className="mr-2 h-4 w-4" /> Edit Invoice
+                                Edit 
                             </Link>
                         </Button>
                     </div>

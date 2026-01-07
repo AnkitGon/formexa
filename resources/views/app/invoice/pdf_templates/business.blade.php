@@ -26,10 +26,11 @@
         $status = $invoice->status ?? 'draft';
         $statusLabel = ucfirst(str_replace('_', ' ', $status));
         $client = $invoice->client;
-        $businessName = $business_settings['company_name'] ?? 'Your Business';
+        $businessName = $business_settings['company_name'] ?? '';
         $businessEmail = $business_settings['company_email'] ?? null;
         $businessAddress = $business_settings['company_address'] ?? null;
         $balanceDue = max(0, ($invoice->total ?? 0) - ($invoice->amount_paid ?? 0));
+        $dateFormat = $business_settings['date_format'] ?? 'Y-m-d';
     @endphp
 
     <style>
@@ -150,8 +151,14 @@
 <body>
     <div class="invoice">
         <div class="flex-between" style="align-items:flex-start;">
+            <div style="display:flex; gap:12px; align-items:center;">
+                @if (!empty($business_settings['invoice_logo_url']))
+                    <div style="width:70px; height:70px; display:flex; align-items:center; justify-content:center;">
+                        <img src="{{ $business_settings['invoice_logo_url'] }}" alt="Logo" style="max-width:70px; max-height:70px; object-fit:contain;">
+                    </div>
+                @endif
+            </div>
             <div>
-                <h1>Invoice</h1>
                 <div>{{ $businessName }}</div>
                 @if ($businessAddress)
                     <div class="muted" style="white-space: pre-line;">{{ $businessAddress }}</div>
@@ -163,8 +170,8 @@
             <div class="text-right">
                 <div class="pill badge-primary">{{ $statusLabel }}</div>
                 <div><strong>{{ $invoice->invoice_number }}</strong></div>
-                <div class="muted">Date: {{ optional($invoice->invoice_date)->format('M d, Y') }}</div>
-                <div class="muted">Due: {{ optional($invoice->due_date)->format('M d, Y') }}</div>
+                <div class="muted">Date: {{ optional($invoice->invoice_date)->format($dateFormat) }}</div>
+                <div class="muted">Due: {{ optional($invoice->due_date)->format($dateFormat) }}</div>
             </div>
         </div>
 
@@ -186,13 +193,7 @@
                     <div class="muted">No client selected</div>
                 @endif
             </div>
-            <div style="flex:1;" class="text-right">
-                <h3>Summary</h3>
-                <div class="muted">Currency: {{ $invoice->currency ?? 'USD' }}</div>
-                @if ($invoice->terms)
-                    <div class="muted">Terms: {{ $invoice->terms }}</div>
-                @endif
-            </div>
+           
         </div>
 
         <table>

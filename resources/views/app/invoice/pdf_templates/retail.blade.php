@@ -67,7 +67,12 @@
         <div class="center muted">POS-friendly, compact layout</div>
 
         <div class="info row">
-            <div>
+            <div style="display:flex; gap:10px; align-items:center;">
+                @if (!empty($business_settings['invoice_logo_url']))
+                    <div style="width:50px; height:50px; display:flex; align-items:center; justify-content:center;">
+                        <img src="{{ $business_settings['invoice_logo_url'] }}" alt="Logo" style="max-width:50px; max-height:50px; object-fit:contain;">
+                    </div>
+                @endif
                 <div><strong>{{ $business_settings['company_name'] ?? 'Your Business' }}</strong></div>
                 @if (!empty($business_settings['company_address']))
                     <div class="muted" style="white-space: pre-line;">{{ $business_settings['company_address'] }}</div>

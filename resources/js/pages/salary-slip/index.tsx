@@ -2,8 +2,25 @@ import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import ConfirmDeleteButton from '@/components/ConfirmDeleteButton';
 import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, Link, usePage, Form } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import Pagination from '@/components/pagination';
+
+interface SalarySlip {
+    id: number;
+    net_salary: number | string;
+    meta?: Record<string, any> | null;
+    template?: { name?: string | null } | null;
+}
+
+interface SettingsDefaults {
+    default_currency?: string | null;
+    currency_symbol_position?: string | null;
+}
+
+interface Paginator<T> {
+    data: T[];
+    links?: Array<{ url: string | null; label: string; active: boolean }>;
+}
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -13,7 +30,26 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function SalarySlipIndex() {
-    const { salarySlips } = usePage<SharedData & { salarySlips: any }>().props;
+    const { salarySlips, settingsDefaults } = usePage<
+        SharedData & { salarySlips: Paginator<SalarySlip>; settingsDefaults?: SettingsDefaults }
+    >().props;
+
+    const currencySymbol =
+        (settingsDefaults?.default_currency || '').toUpperCase() === 'INR'
+            ? '₹'
+            : settingsDefaults?.default_currency
+              ? settingsDefaults.default_currency
+              : '$';
+    const symbolPosition =
+        (settingsDefaults?.currency_symbol_position as 'prefix' | 'suffix' | null) === 'suffix'
+            ? 'suffix'
+            : 'prefix';
+
+    const formatMoney = (amount: number | string | undefined) => {
+        const num = Number(amount ?? 0);
+        const fixed = num.toFixed(2);
+        return symbolPosition === 'suffix' ? `${fixed}${currencySymbol}` : `${currencySymbol}${fixed}`;
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -41,7 +77,7 @@ export default function SalarySlipIndex() {
                             </tr>
                         </thead>
                         <tbody>
-                            {(salarySlips?.data ?? []).length === 0 && (
+                            {salarySlips.data.length === 0 && (
                                 <tr className="border-b border-sidebar-border/50 last:border-b-0">
                                     <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
                                         <div className="flex flex-col items-center gap-2">
@@ -51,7 +87,7 @@ export default function SalarySlipIndex() {
                                 </tr>
                             )}
 
-                            {(salarySlips?.data ?? []).map((slip: any) => (
+                            {salarySlips.data.map((slip: any) => (
                                 <tr
                                     key={slip.id}
                                     className="border-b border-sidebar-border/50 last:border-b-0"
@@ -63,7 +99,7 @@ export default function SalarySlipIndex() {
                                         {slip.meta?.employee_name ?? ''}
                                     </td>
                                     <td className="px-3 py-2 text-right">
-                                        {Number(slip.net_salary ?? 0).toFixed(2)}
+                                        {formatMoney(slip.net_salary)}
                                     </td>
                                     <td className="px-3 py-2">
                                         <div className="flex justify-end gap-2">
@@ -89,7 +125,7 @@ export default function SalarySlipIndex() {
                     </table>
                 </div>
 
-                <Pagination links={salarySlips?.links} />
+                <Pagination links={salarySlips.links} />
             </div>
         </AppLayout>
     );

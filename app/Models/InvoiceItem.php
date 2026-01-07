@@ -19,6 +19,9 @@ class InvoiceItem extends Model
         'tax_id',
         'tax_type',
         'amount',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
     ];
 
     protected $casts = [
@@ -26,6 +29,8 @@ class InvoiceItem extends Model
         'unit_price' => 'decimal:2',
         'tax_rate' => 'decimal:2',
         'amount' => 'decimal:2',
+        'discount_value' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     public function invoice(): BelongsTo

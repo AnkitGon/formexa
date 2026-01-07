@@ -782,7 +782,12 @@ export default function SalarySlipForm({
                                                         ? 'date'
                                                         : 'text'
                                                 }
-                                                value={row.value}
+                                                value={
+                                                    row.key === 'pay_date' &&
+                                                    (row.value === '' || isIsoDate(row.value))
+                                                        ? row.value || new Date().toISOString().slice(0, 10)
+                                                        : row.value
+                                                }
                                                 required
                                                 onClick={(e) => {
                                                     if (isPayDateNative) {

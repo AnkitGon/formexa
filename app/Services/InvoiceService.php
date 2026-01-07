@@ -47,36 +47,102 @@ class InvoiceService
     public function calculateTotals(Invoice $invoice)
     {
         $subtotal = 0;
-        $taxTotal = 0;
-        $discountTotal = 0; // Keeping it 0 for now as item level discount logic is not fully defined
+        $totalTax = 0;
+        $totalDiscount = 0;
 
+        // 1. Calculate Base Subtotal
         foreach ($invoice->items as $item) {
-            // Amount is already calculated in item model or controller, but let's re-verify
-            // item amount = qty * unit_price
-            $itemAmount = $item->quantity * $item->unit_price;
+            $subtotal += $item->quantity * $item->unit_price;
+        }
 
-            // Tax
+        // 2. Determine Discount Mode & Amounts
+        $discountMode = $invoice->discount_mode ?? 'none';
+        $invoiceDiscountAmount = 0;
+
+        if ($discountMode === 'invoice') {
+            $dValue = $invoice->discount_value ?? 0;
+            $dType = $invoice->discount_type ?? 'fixed';
+            
+            if ($dType === 'percent') {
+                $invoiceDiscountAmount = $subtotal * ($dValue / 100);
+            } else {
+                $invoiceDiscountAmount = $dValue;
+            }
+            // Cap discount at subtotal
+            if ($invoiceDiscountAmount > $subtotal) {
+                $invoiceDiscountAmount = $subtotal;
+            }
+            $totalDiscount = $invoiceDiscountAmount;
+        }
+
+        // 3. Process Items for Tax and Item-Level Discounts
+        foreach ($invoice->items as $item) {
+            $baseAmount = $item->quantity * $item->unit_price;
+            $itemDiscount = 0;
+            
+            // Calculate Discount
+            if ($discountMode === 'item') {
+                $dValue = $item->discount_value ?? 0;
+                $dType = $item->discount_type ?? 'fixed'; // InvoiceItem has discount_type
+                
+                if ($dType === 'percent') {
+                    $itemDiscount = $baseAmount * ($dValue / 100);
+                } else {
+                    $itemDiscount = $dValue;
+                }
+                
+                // Cap
+                if ($itemDiscount > $baseAmount) {
+                    $itemDiscount = $baseAmount;
+                }
+                
+                // Update item's stored calculated discount
+                $item->discount_amount = $itemDiscount;
+                $item->saveQuietly(); // Avoid triggering events if possible, or just save
+                
+                $totalDiscount += $itemDiscount;
+            } elseif ($discountMode === 'invoice') {
+                 // Pro-rate invoice discount for tax calculation
+                 // share = (base / subtotal) * invoiceDiscount
+                 // Avoid div by zero
+                 if ($subtotal > 0) {
+                     $itemDiscount = ($baseAmount / $subtotal) * $invoiceDiscountAmount;
+                 }
+                 // We don't save per-item share in DB for invoice-level mode, usually?
+                 // Or we could. For now let's just use it for tax basis.
+                 $item->discount_amount = 0; // Clear item level specific discount
+                 $item->saveQuietly();
+            } else {
+                $item->discount_amount = 0;
+                $item->saveQuietly();
+            }
+            
+            $taxableAmount = $baseAmount - $itemDiscount;
+            
+            // Calculate Tax
             $itemTax = 0;
             if ($item->tax_rate > 0) {
                 if ($item->tax_type === 'fixed') {
-                    // Fixed tax per item quantity or just once per line? 
-                    // Usually fixed tax is per unit, so qty * tax_rate
+                    // Fixed tax usually per qty? Or flat per line?
+                    // Assuming per quantity based on previous code: $item->quantity * $item->tax_rate;
+                    // BUT: fixed tax might not be affected by discount. 
+                    // If it's "Fixed amount per unit", distinct from price. 
                     $itemTax = $item->quantity * $item->tax_rate;
                 } else {
-                    $itemTax = $itemAmount * ($item->tax_rate / 100);
+                    $itemTax = $taxableAmount * ($item->tax_rate / 100);
                 }
             }
-
-            $subtotal += $itemAmount;
-            $taxTotal += $itemTax;
+            
+            $totalTax += $itemTax;
         }
 
-        $total = $subtotal + $taxTotal - $discountTotal;
+        $total = $subtotal - $totalDiscount + $totalTax;
 
         $invoice->update([
             'subtotal' => $subtotal,
-            'tax_total' => $taxTotal,
-            // 'discount_total' => $discountTotal,
+            'tax_total' => $totalTax,
+            'discount_total' => $totalDiscount, // We can use this or discount_amount
+            'discount_amount' => ($discountMode === 'invoice' ? $totalDiscount : 0), // Store specific invoice-level discount
             'total' => $total,
         ]);
 

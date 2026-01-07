@@ -19,9 +19,7 @@ export default function SalarySlipTemplateEdit({
 }: {
     template: any;
 }) {
-    const { designOptions, branding } = usePage<
-        SharedData & { designOptions: any; branding?: { invoice_logo_url?: string | null } }
-    >().props;
+    const { designOptions } = usePage<SharedData & { designOptions: any }>().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -43,7 +41,6 @@ export default function SalarySlipTemplateEdit({
                     action={`/template/${template.id}`}
                     designOptions={designOptions}
                     template={template}
-                    branding={branding}
                 />
             </div>
         </AppLayout>

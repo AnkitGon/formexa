@@ -1,8 +1,8 @@
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Select,
     SelectContent,
@@ -42,7 +42,6 @@ type TemplateFormValues = {
     line_height?: number | string;
     is_active?: boolean;
     document_type?: string;
-    show_logo?: boolean | number | string | null;
 };
 
 type Props = {
@@ -50,9 +49,6 @@ type Props = {
     action: string;
     designOptions: Record<string, string>;
     template?: TemplateFormValues;
-    branding?: {
-        invoice_logo_url?: string | null;
-    };
 };
 
 export default function SalarySlipTemplateForm({
@@ -60,7 +56,6 @@ export default function SalarySlipTemplateForm({
     action,
     designOptions,
     template,
-    branding,
 }: Props) {
     const DEFAULT_FONT = 'default';
     const csrfToken = getCsrfToken();
@@ -146,12 +141,6 @@ export default function SalarySlipTemplateForm({
     const [secondaryColor, setSecondaryColor] = useState<string>(
         normalizeColor(template?.secondary_color, '#111827'),
     );
-    const [showLogo, setShowLogo] = useState<boolean>(() => {
-        const incoming = template?.show_logo;
-        if (incoming === undefined || incoming === null) return true;
-        if (incoming === '0' || incoming === 0) return false;
-        return Boolean(incoming);
-    });
     const previewTimeoutRef = useRef<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -272,7 +261,6 @@ export default function SalarySlipTemplateForm({
                     {mode === 'edit' && (
                         <input type="hidden" name="_method" value="PUT" />
                     )}
-                    <input type="hidden" name="show_logo" value={showLogo ? '1' : '0'} />
 
                     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                         <div className="space-y-6">
@@ -360,39 +348,6 @@ export default function SalarySlipTemplateForm({
                                     <InputError message={(errors as any).code} />
                                 </div>
                             </div>
-
-                            {documentType === 'invoice' && (
-                                <div className="grid gap-2 rounded-lg border border-sidebar-border/60 bg-muted/20 p-3">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <Checkbox
-                                                id="show_logo"
-                                                checked={showLogo}
-                                                disabled={!branding?.invoice_logo_url}
-                                                onCheckedChange={(val) => {
-                                                    const next = Boolean(val);
-                                                    setShowLogo(next);
-                                                    triggerFormChange();
-                                                }}
-                                            />
-                                            <Label htmlFor="show_logo" className="m-0">
-                                                Show company logo on invoice
-                                            </Label>
-                                        </div>
-                                        {!branding?.invoice_logo_url && (
-                                            <span className="text-xs text-muted-foreground">Logo not uploaded</span>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                        Uses the logo uploaded in Settings.
-                                    </p>
-                                    {!branding?.invoice_logo_url && (
-                                        <p className="text-xs text-muted-foreground">
-                                            Upload a logo in Settings to enable this option.
-                                        </p>
-                                    )}
-                                </div>
-                            )}
 
                             <div className="grid gap-4 md:grid-cols-3">
                                 <div className="grid gap-2">
@@ -586,7 +541,7 @@ export default function SalarySlipTemplateForm({
                                             ? true
                                             : Boolean(template?.is_active)
                                     }
-                                    onCheckedChange={(v) => {
+                                    onCheckedChange={(v: boolean | 'indeterminate') => {
                                         const form = document.getElementById(
                                             'templateForm',
                                         ) as HTMLFormElement | null;

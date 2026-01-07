@@ -18,6 +18,20 @@ class InvoiceController extends Controller
 {
     protected $invoiceService;
 
+    /**
+     * Normalize invoice logo path to a public URL for templates.
+     */
+    private function addInvoiceLogoUrl(array $settings): array
+    {
+        if (!empty($settings['invoice_logo']) && is_string($settings['invoice_logo'])) {
+            $path = $settings['invoice_logo'];
+            $settings['invoice_logo_url'] = (str_starts_with($path, 'http://') || str_starts_with($path, 'https://'))
+                ? $path
+                : asset('storage/' . ltrim($path, '/'));
+        }
+        return $settings;
+    }
+
     public function __construct(InvoiceService $invoiceService)
     {
         $this->invoiceService = $invoiceService;
@@ -37,8 +51,11 @@ class InvoiceController extends Controller
             ->paginate($perPage)
             ->appends(request()->query());
 
+        $settings = $this->addInvoiceLogoUrl(UserSetting::getMapForUser(Auth::id()));
+
         return Inertia::render('Invoices/Index', [
-            'invoices' => $invoices
+            'invoices' => $invoices,
+            'settings' => $settings,
         ]);
     }
 
@@ -48,7 +65,7 @@ class InvoiceController extends Controller
         // Generate a potential invoice number (not saved yet, just for display)
         $nextNumber = $this->invoiceService->generateInvoiceNumber(Auth::user());
 
-        $settings = UserSetting::getMapForUser(Auth::id());
+        $settings = $this->addInvoiceLogoUrl(UserSetting::getMapForUser(Auth::id()));
         $taxes = Tax::where('user_id', Auth::id())->active()->orderBy('name')->get();
         $templates = DocumentTemplate::where('user_id', Auth::id())
             ->where('document_type', 'invoice')
@@ -85,6 +102,11 @@ class InvoiceController extends Controller
             'items.*.tax_id' => 'nullable|exists:taxes,id',
             'invoice_template_id' => 'required|exists:document_templates,id',
             'notes' => 'nullable|string',
+            'discount_mode' => 'nullable|in:none,item,invoice',
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'items.*.discount_type' => 'nullable|in:fixed,percent',
+            'items.*.discount_value' => 'nullable|numeric|min:0',
         ]);
 
         // Verify client ownership
@@ -103,6 +125,9 @@ class InvoiceController extends Controller
                 'due_date' => $validated['due_date'],
                 'invoice_template_id' => $validated['invoice_template_id'] ?? null,
                 'notes' => $validated['notes'],
+                'discount_mode' => $validated['discount_mode'] ?? 'none',
+                'discount_type' => $validated['discount_type'] ?? 'fixed',
+                'discount_value' => $validated['discount_value'] ?? 0,
                 'status' => 'draft',
             ]);
 
@@ -115,6 +140,8 @@ class InvoiceController extends Controller
                     'tax_rate' => $itemData['tax_rate'] ?? 0,
                     'tax_type' => $itemData['tax_type'] ?? 'percent',
                     'tax_id' => $itemData['tax_id'] ?? null,
+                    'discount_type' => $itemData['discount_type'] ?? 'fixed',
+                    'discount_value' => $itemData['discount_value'] ?? 0,
                     'amount' => $amount,
                 ]);
             }
@@ -150,11 +177,14 @@ class InvoiceController extends Controller
             ->orderBy('name')
             ->get();
 
+        $settings = UserSetting::getMapForUser(Auth::id());
+
         return Inertia::render('Invoices/Edit', [
             'invoice' => $invoice,
             'clients' => $clients,
             'taxes' => $taxes,
             'templates' => $templates,
+            'business_settings' => $settings,
         ]);
     }
 
@@ -184,7 +214,12 @@ class InvoiceController extends Controller
             'items.*.tax_id' => 'nullable|exists:taxes,id',
             'invoice_template_id' => 'required|exists:document_templates,id',
             'notes' => 'nullable|string',
-            'status' => 'required|in:draft,sent,paid,partially_paid,overdue,cancelled'
+            'status' => 'required|in:draft,sent,paid,partially_paid,overdue,cancelled',
+            'discount_mode' => 'nullable|in:none,item,invoice',
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'items.*.discount_type' => 'nullable|in:fixed,percent',
+            'items.*.discount_value' => 'nullable|numeric|min:0',
         ]);
 
         // Verify client ownership
@@ -204,6 +239,9 @@ class InvoiceController extends Controller
                 'invoice_template_id' => $validated['invoice_template_id'] ?? null,
                 'notes' => $validated['notes'],
                 'status' => $validated['status'],
+                'discount_mode' => $validated['discount_mode'] ?? 'none',
+                'discount_type' => $validated['discount_type'] ?? 'fixed',
+                'discount_value' => $validated['discount_value'] ?? 0,
             ]);
 
             // Replace items
@@ -218,6 +256,8 @@ class InvoiceController extends Controller
                     'tax_rate' => $itemData['tax_rate'] ?? 0,
                     'tax_type' => $itemData['tax_type'] ?? 'percent',
                     'tax_id' => $itemData['tax_id'] ?? null,
+                    'discount_type' => $itemData['discount_type'] ?? 'fixed',
+                    'discount_value' => $itemData['discount_value'] ?? 0,
                     'amount' => $amount,
                 ]);
             }
@@ -236,7 +276,6 @@ class InvoiceController extends Controller
 
         $invoice->load(['client', 'items']);
         $user = Auth::user();
-        $settings = UserSetting::getMapForUser(Auth::id());
 
         $template = null;
         if ($invoice->invoice_template_id) {
@@ -255,6 +294,7 @@ class InvoiceController extends Controller
         if (! view()->exists($view)) {
             $view = 'app.invoice.pdf_templates.business';
         }
+        $settings = $this->addInvoiceLogoUrl(UserSetting::getMapForUser(Auth::id()));
 
         $renderedTemplate = view($view, [
             'invoice' => $invoice,
@@ -293,7 +333,7 @@ class InvoiceController extends Controller
         }
 
         $invoice->load(['client', 'items']);
-        $settings = UserSetting::getMapForUser(Auth::id());
+        $settings = $this->addInvoiceLogoUrl(UserSetting::getMapForUser(Auth::id()));
 
         // Merge invoice specific snapshots with defaults if missing
         // But InvoicePaper handles this precedence if we pass the invoice object correctly

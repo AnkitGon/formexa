@@ -15,7 +15,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function SalarySlipTemplateCreate() {
-    const { designOptions, branding } = usePage<SharedData & { designOptions: any; branding?: { invoice_logo_url?: string | null } }>().props;
+    const { designOptions } = usePage<SharedData & { designOptions: any }>().props;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -36,7 +36,6 @@ export default function SalarySlipTemplateCreate() {
                     mode="create"
                     action="/template"
                     designOptions={designOptions}
-                    branding={branding}
                 />
             </div>
         </AppLayout>

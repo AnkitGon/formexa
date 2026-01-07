@@ -26,6 +26,11 @@ class Invoice extends Model
         'amount_paid',
         'currency',
         'notes',
+        'terms',
+        'discount_mode',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
     ];
 
     protected $casts = [
@@ -36,6 +41,8 @@ class Invoice extends Model
         'discount_total' => 'decimal:2',
         'total' => 'decimal:2',
         'amount_paid' => 'decimal:2',
+        'discount_value' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     public function user(): BelongsTo

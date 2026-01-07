@@ -144,6 +144,9 @@ export default function SettingsIndex({
     );
     const [invoiceLogo, setInvoiceLogo] = useState<File | null>(null);
     const [invoiceLogoError, setInvoiceLogoError] = useState<string | undefined>();
+    const [invoiceDiscountMode, setInvoiceDiscountMode] = useState<string>(
+        (settings?.invoice_discount_mode as string | null) ?? 'none',
+    );
     const [invoiceErrors, setInvoiceErrors] = useState<Record<string, string | undefined>>({});
     const [isSavingInvoice, setIsSavingInvoice] = useState(false);
 
@@ -171,7 +174,33 @@ export default function SettingsIndex({
         settings?.currency_symbol_position,
         currencyOptions,
         settings?.invoice_prefix,
+        settings?.invoice_prefix,
         settings?.invoice_series,
+        settings?.invoice_discount_mode,
+    ]);
+
+    useEffect(() => {
+        setDateFormat((settings?.date_format as string | null) ?? 'YYYY-MM-DD');
+        setTimeFormat((settings?.time_format as string | null) ?? 'hh:mm A');
+        const fallbackCurrency = currencyOptions[0]?.value ?? '';
+        setDefaultCurrency((settings?.default_currency as string | null) ?? fallbackCurrency);
+        setCurrencySymbolPosition(
+            (settings?.currency_symbol_position as string | null) ?? 'prefix',
+        );
+        setInvoicePrefix((settings?.invoice_prefix as string | null) ?? 'INV-');
+        setInvoiceSeries(
+            (settings?.invoice_series as string | null) ?? new Date().getFullYear().toString(),
+        );
+        setInvoiceDiscountMode((settings?.invoice_discount_mode as string | null) ?? 'none');
+    }, [
+        settings?.date_format,
+        settings?.time_format,
+        settings?.default_currency,
+        settings?.currency_symbol_position,
+        currencyOptions,
+        settings?.invoice_prefix,
+        settings?.invoice_series,
+        settings?.invoice_discount_mode,
     ]);
 
     const validateImageFile = (file: File | null): string | null => {
@@ -736,6 +765,7 @@ export default function SettingsIndex({
                                                     invoice_prefix: invoicePrefix,
                                                     invoice_series: invoiceSeries,
                                                     invoice_logo: invoiceLogo,
+                                                    invoice_discount_mode: invoiceDiscountMode,
                                                 },
                                                 {
                                                     preserveScroll: true,
@@ -863,6 +893,26 @@ export default function SettingsIndex({
                                                     Commonly a year or business unit (e.g., 2025).
                                                 </p>
                                                 <InputError message={invoiceErrors.invoice_series} />
+                                            </div>
+
+                                            <div className="space-y-2 lg:col-span-2">
+                                                <Label htmlFor="invoice_discount_mode">Discount Mode</Label>
+                                                <Select
+                                                    value={invoiceDiscountMode}
+                                                    onValueChange={setInvoiceDiscountMode}
+                                                >
+                                                    <SelectTrigger id="invoice_discount_mode">
+                                                        <SelectValue placeholder="Select discount mode" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="none">None</SelectItem>
+                                                        <SelectItem value="item">Per Item</SelectItem>
+                                                        <SelectItem value="invoice">Invoice Level</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Default discount behavior for new invoices.
+                                                </p>
                                             </div>
                                         </div>
 
